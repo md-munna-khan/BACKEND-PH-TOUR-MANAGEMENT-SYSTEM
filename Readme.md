@@ -533,3 +533,32 @@ process.on("uncaughtException", (err) => {
 throw new Error ("I forgot to handle this local error")
 
 ```
+## 25-11 Setting Up ES Lint and Fix Errors Using Commands
+![alt text](image-12.png) 
+
+#### typeScript eslint link setup  as like documentation
+https://typescript-eslint.io/getting-started/
+ create eslint file on root folder
+![alt text](image-13.png)
+
+```ts
+// @ts-check
+
+import eslint from '@eslint/js';
+import tseslint from 'typescript-eslint';
+
+export default tseslint.config(
+  eslint.configs.recommended,
+//   tseslint.configs.recommended,
+  tseslint.configs.strict,
+  tseslint.configs.stylistic,
+  {
+     rules: {
+ 
+    "no-console": 'warn',
+
+   
+  },
+  }
+);
+```
