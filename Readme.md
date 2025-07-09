@@ -541,6 +541,8 @@ https://typescript-eslint.io/getting-started/
  create eslint file on root folder
 ![alt text](image-13.png)
 
+## 25-12 Setting Up Environment Variables & Module Summary
+![alt text](image-14.png)
 ```ts
 // @ts-check
 
@@ -562,3 +564,66 @@ export default tseslint.config(
   }
 );
 ```
+
+```ts
+import dotenv from "dotenv";
+
+dotenv.config()
+
+interface EnvConfig {
+    PORT: string,
+    DB_URL: string,
+    NODE_ENV: "development" | "production"
+}
+
+const loadEnvVariables = (): EnvConfig => {
+    const requiredEnvVariables: string[] = ["PORT", "DB_URL", "NODE_ENV"];
+
+    requiredEnvVariables.forEach(key => {
+        if (!process.env[key]) {
+            throw new Error(`Missing require environment variabl ${key}`)
+        }
+    })
+
+    return {
+        PORT: process.env.PORT as string,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        DB_URL: process.env.DB_URL!,
+        NODE_ENV: process.env.NODE_ENV as "development" | "production"
+    }
+}
+
+export const envVars = loadEnvVariables()
+```
+
+```ts
+/* eslint-disable no-console */
+import mongoose from "mongoose";
+import app from "./app";
+import { Server } from "http";
+import { envVars } from "./config/env";
+
+
+
+let server: Server;
+
+const startServer = async () => {
+    try {
+        await mongoose.connect(envVars.DB_URL)
+
+        console.log("Connected to DB!!");
+
+        server = app.listen(envVars.PORT, () => {
+            console.log(`Server is listening to port ${envVars.PORT}`);
+        });
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+startServer();
+```
+
+
+
+# Ph Tour Management Backend-Part 1
