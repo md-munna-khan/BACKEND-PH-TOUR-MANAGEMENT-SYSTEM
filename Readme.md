@@ -1057,3 +1057,19 @@ app.get("/", (req: Request, res: Response) => {
 
 export default app
 ```
+
+## 26-8 Create Not Found Route
+- notFound.ts
+```ts
+import { Request, Response } from "express";
+import httpStatus from "http-status-codes";
+const notFound=(req: Request, res: Response) =>{
+  res.status(httpStatus.NOT_FOUND).json({
+    success:false,
+    message:"Route not found"
+  })
+}
+export default notFound
+```
+- app.ts
+![alt text](image-15.png)
