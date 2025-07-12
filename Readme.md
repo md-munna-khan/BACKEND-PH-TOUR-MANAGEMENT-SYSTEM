@@ -889,7 +889,214 @@ export const AuthServices = {
     credentialsLogin
 }
 ```
+## 27-9 Complete checkAuth Middleware and Seed Super Admin
 
+- middlewares -> checkAuth.ts 
+
+```ts 
+
+import { JwtPayload } from 'jsonwebtoken';
+
+
+
+import { NextFunction, Request, Response } from "express";
+import AppError from '../errorHelpers/AppError';
+import { verifyToken } from '../utils/jwt';
+import { envVars } from '../config/env';
+
+// this is receiving all the role sent (converted into an array of the sent roles) from where the middleware has been called 
+export const checkAuth = (...authRoles: string[]) => async (req: Request, res: Response, next: NextFunction) => {
+    try {
+        // we will get the access token from frontend inside headers. foe now we will set in postman headers 
+        const accessToken = req.headers.authorization;
+        if (!accessToken) {
+            throw new AppError(403, "No Token Received")
+        }
+
+        //  if there is token we will verify 
+
+        // const verifiedToken = jwt.verify(accessToken, "secret")
+
+        const verifiedToken = verifyToken(accessToken, envVars.JWT_ACCESS_SECRET) as JwtPayload
+
+        // console.log(verifiedToken)
+
+        // function verify(token: string, secretOrPublicKey: jwt.Secret | jwt.PublicKey, options?: jwt.VerifyOptions & {complete?: false;}): jwt.JwtPayload | string (+6 overloads)
+
+        // authRoles = ["ADMIN", "SUPER_ADMIN"]
+        if (!authRoles.includes(verifiedToken.role)) {
+            throw new AppError(403, "You Are Not Permitted To View This Route ")
+        }
+
+        /*
+        const accessToken: string | undefined 
+        token returns string(if any error occurs during verifying token) or a JwtPayload(same as any type that payload can be anything). 
+        */
+        next()
+    } catch (error) {
+        next(error)
+    }
+}
+```
+
+- user.route.ts 
+
+```ts 
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+
+
+router.get("/all-users", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getAllUsers)
+router.post("/register", validateRequest(createUserZodSchema), userControllers.createUser)
+
+export const UserRoutes = router
+```
+
+#### Lets do something like when a server is created a user will be created automatically and the user role will be super admin
+
+- utils -> seedSuperAdmin.ts 
+
+```ts 
+/* eslint-disable no-console */
+import { envVars } from "../config/env"
+import { IAuthProvider, IUser, Role } from "../modules/user/user.interface"
+import { User } from "../modules/user/user.model"
+import bcrypt from 'bcryptjs';
+
+export const seedSuperAdmin = async () => {
+    try {
+        const isSuperAdminExist = await User.findOne({ email: envVars.SUPER_ADMIN_EMAIL })
+        if (isSuperAdminExist) {
+            console.log("Super Admin Already Exists!")
+            return
+        }
+        console.log("Trying To Create Super Admin")
+        const hashedPassword = await bcrypt.hash(envVars.SUPER_ADMIN_PASSWORD, Number(envVars.BCRYPT_SALT_ROUND))
+        const authProvider: IAuthProvider = {
+            provider: "credentials",
+            providerId: envVars.SUPER_ADMIN_EMAIL
+        }
+
+        const payload: IUser = {
+            name: "Super admin",
+            role: Role.SUPER_ADMIN,
+            email: envVars.SUPER_ADMIN_EMAIL,
+            password: hashedPassword,
+            isVerified: true,
+            auths: [authProvider]
+
+        }
+        const superAdmin = await User.create(payload)
+        console.log("Super Admin Created Successfully \n")
+        console.log(superAdmin)
+
+
+    } catch (error) {
+        console.log(error)
+    }
+}
+```
+
+- server.ts 
+
+```ts 
+/* eslint-disable no-console */
+import { Server } from "http"
+
+import mongoose from "mongoose"
+import app from "./app";
+import { envVars } from "./app/config/env";
+import { seedSuperAdmin } from "./app/utils/seedSuperAdmin";
+
+let server: Server
+
+
+const startServer = async () => {
+    try {
+        await mongoose.connect(envVars.DB_URL);
+        console.log("Connected To MongoDb")
+        server = app.listen(envVars.PORT, () => {
+            console.log(`Server is Running On Port ${envVars.PORT}`)
+        })
+    } catch (error) {
+        console.log(error)
+    }
+}
+
+(async () => {
+    await startServer()
+    await seedSuperAdmin()
+})()
+
+process.on("SIGTERM", (err) => {
+    console.log("Signal Termination Happened...! Server Is Shutting Down !", err)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+process.on("SIGINT", () => {
+    console.log("I am manually Closing the server! Server Is Shutting Down !")
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+process.on("unhandledRejection", () => {
+
+    console.log("Unhandled Rejection Happened...! Server Is Shutting Down !")
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+process.on("uncaughtException", (err) => {
+    console.log("Uncaught Exception Happened...! Server Is Shutting Down !", err)
+
+    // if express server is on and unhandled rejection happens close the express server using server.close()
+    // then close the node server using process.exit(1)
+    if (server) {
+        server.close(() => {
+            process.exit(1)
+        })
+    }
+
+    process.exit(1)
+
+})
+
+```
 
 
 
