@@ -769,6 +769,127 @@ router.post("/register", validateRequest(createUserZodSchema), userControllers.c
 
 export const UserRoutes = router
 ```
+## 27-8 Create JWT Helpers and checkAuth Middleware
+
+- add these field inside env 
+
+```
+PORT=
+DB_URL=
+NODE_ENV=
+BCRYPT_SALT_ROUND=
+JWT_ACCESS_SECRET=
+JWT_ACCESS_EXPIRES=
+```
+
+- add inside the config file env.ts 
+
+```ts 
+import dotenv from "dotenv"
+
+dotenv.config()
+
+interface EnvConfig {
+    PORT: string
+    DB_URL: string,
+    NODE_ENV: "development" | "production",
+    BCRYPT_SALT_ROUND: string,
+    JWT_ACCESS_SECRET: string,
+    JWT_ACCESS_EXPIRES: string
+}
+
+const loadEnvVariables = (): EnvConfig => {
+    const requiredEnvVariables: string[] = ["PORT", "DB_URL", "NODE_ENV", "BCRYPT_SALT_ROUND", "JWT_ACCESS_SECRET", "JWT_ACCESS_EXPIRES"];
+
+    requiredEnvVariables.forEach(key => {
+        if (!process.env[key]) {
+            throw new Error(`Missing required environment variable ${key}`);
+        }
+    });
+
+    return {
+        PORT: process.env.PORT as string,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        DB_URL: process.env.DB_URL!,
+        NODE_ENV: process.env.NODE_ENV as "development" | "production",
+        BCRYPT_SALT_ROUND: process.env.BCRYPT_SALT_ROUND as string,
+        JWT_ACCESS_SECRET: process.env.JWT_ACCESS_SECRET as string,
+        JWT_ACCESS_EXPIRES: process.env.JWT_ACCESS_EXPIRES as string
+    };
+};
+
+
+export const envVars = loadEnvVariables()
+
+```
+
+-  utils -> jwt.ts 
+  
+```ts
+import { JwtPayload, SignOptions } from "jsonwebtoken";
+import jwt from 'jsonwebtoken';
+
+export const generateToken = (payload: JwtPayload, secret: string, expiresIn: string) => {
+    const token = jwt.sign(payload, secret, { expiresIn } as SignOptions)
+
+    // is to explicitly tell TypeScript that the object { expiresIn } should be treated as a SignOptions type, which is an interface provided by the jsonwebtoken package.
+    return token
+}
+
+export const verifyToken = (token: string, secret: string) => {
+    const verifyToken = jwt.verify(token, secret)
+    return verifyToken
+}
+```
+
+- auth.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError"
+import { IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken } from "../../utils/jwt";
+import { envVars } from "../../config/env";
+
+
+const credentialsLogin = async (payload: Partial<IUser>) => {
+    const { email, password } = payload
+
+    const isUserExist = await User.findOne({ email })
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Email Does Not Exist")
+    }
+
+    const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+    if (!isPasswordMatch) {
+        throw new AppError(httpStatus.BAD_REQUEST, "Password Does Not Match")
+    }
+
+    // generating access token 
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+    // const accessToken = jwt.sign(jwtPayload, "secret", { expiresIn: "1d" })
+    const accessToken = generateToken(jwtPayload, envVars.JWT_ACCESS_SECRET, envVars.JWT_ACCESS_EXPIRES)
+
+    // function sign(payload: string | Buffer | object, secretOrPrivateKey: jwt.Secret | jwt.PrivateKey, options?: jwt.SignOptions): string (+4 overloads)
+
+    return {
+        accessToken
+    }
+}
+
+export const AuthServices = {
+    credentialsLogin
+}
+```
+
 
 
 
