@@ -4,6 +4,7 @@ import { IAuthProvider, IUser } from "./user.interface";
 import { User } from "./user.model";
 import httpStatus from "http-status-codes";
 import { envVars } from "../../../config/env";
+import { JwtPayload } from "jsonwebtoken";
 const createUserServices = async (payload: Partial<IUser>) => {
   const { email,password, ...rest } = payload;
   const isUserExist = await User.findOne({email});
@@ -19,9 +20,12 @@ const authProvider:IAuthProvider={provider:"credentials",providerId:email as str
     auths:[authProvider],
     ...rest,
   });
-  return user;
-  
-};
+  return user;};
+  const updateUser = async (userId:string,payload:Partial<IUser>,decodedToken:JwtPayload)=>{
+   if(payload.role){
+    if(decodedToken.r)
+   }
+  }
 
 const getAllUsers = async () => {
   const users = await User.find({});
