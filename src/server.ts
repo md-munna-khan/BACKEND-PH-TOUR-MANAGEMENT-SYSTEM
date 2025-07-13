@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import app from "./app";
 import { Server } from "http";
 import { envVars } from "./config/env";
+import { seedSuperAdmin } from "./app/utils/seedSuperAdmin";
 
 
 
@@ -22,7 +23,10 @@ const startServer = async () => {
     }
 }
 
-startServer();
+(async ()=>{
+  await startServer()
+await seedSuperAdmin()
+})()
 
 process.on("SIGTERM", () => {
   console.log("SIGTERM signal detected ... server shutting down");
