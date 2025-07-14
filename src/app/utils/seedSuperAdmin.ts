@@ -1,5 +1,5 @@
 import bcryptjs from "bcryptjs";
-import { envVars } from "../../config/env"
+import { envVars } from "../config/env"
 import { User } from "../modules/user/user.model"
 import { IAuthProvider, IUser, Role } from "../modules/user/user.interface";
 

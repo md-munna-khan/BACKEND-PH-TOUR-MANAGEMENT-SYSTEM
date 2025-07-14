@@ -6,6 +6,7 @@ import httpStatus from "http-status-codes";
 import { AuthServices } from "./auth.service";
 import AppError from "../../errorHelpers/app.error";
 import { setAuthCookie } from "../../utils/setCookie";
+import { JwtPayload } from "jsonwebtoken";
 const credentialsLogin = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const loginInfo = await AuthServices.credentialsLogin(req.body);
@@ -77,7 +78,7 @@ const resetPassword = catchAsync(
  const newPassword = req.body.newPassword;
  const decodedToken= req.user
 
-  await AuthServices.resetpassword(oldPassword,newPassword,decodedToken)
+  await AuthServices.resetpassword(oldPassword,newPassword,decodedToken) 
     sendResponse(res, {
       success: true,
       statusCode: httpStatus.OK,

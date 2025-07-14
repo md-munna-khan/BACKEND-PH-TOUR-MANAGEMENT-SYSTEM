@@ -3,7 +3,7 @@ import AppError from "../../errorHelpers/app.error";
 import { IAuthProvider, IUser, Role } from "./user.interface";
 import { User } from "./user.model";
 import httpStatus from "http-status-codes";
-import { envVars } from "../../../config/env";
+import { envVars } from "../../config/env";
 import { JwtPayload } from "jsonwebtoken";
 const createUserServices = async (payload: Partial<IUser>) => {
   const { email,password, ...rest } = payload;

@@ -8,7 +8,7 @@ import { UserServices } from "./user.service";
 import { catchAsync } from "../../utils/catchAsync.";
 
 import { sendResponse } from "../../utils/sendResponse";
-import { envVars } from "../../../config/env";
+import { envVars } from "../../config/env";
 import { verifyToken } from "../../utils/jwt";
 import { Jwt, JwtPayload } from "jsonwebtoken";
 
