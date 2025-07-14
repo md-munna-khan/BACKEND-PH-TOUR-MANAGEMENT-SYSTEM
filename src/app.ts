@@ -5,9 +5,10 @@ import { router } from "./app/modules/routes";
 
 import { globalError } from "./app/middleware/globalErrorHandler";
 import notFound from "./app/middleware/notFound";
-
+import cookieParser from "cookie-parser";
 
 const app = express();
+app.use(cookieParser())
 app.use(express.json());
 app.use(cors());
 
@@ -20,5 +21,5 @@ app.get("/", (req: Request, res: Response) => {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
 app.use(globalError);
-app.use(notFound)
+app.use(notFound);
 export default app;
