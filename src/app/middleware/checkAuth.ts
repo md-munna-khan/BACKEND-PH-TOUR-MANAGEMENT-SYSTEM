@@ -15,12 +15,11 @@ import { verifyToken } from "../utils/jwt";
     const verifiedToken =verifyToken(accessToken,envVars.JWT_ACCESS_SECRET) as JwtPayload
     if(!verifiedToken){
       throw new AppError(403,"You are not Authorized");
-      
-    }
+      }
     if((!authRoles.includes(verifiedToken.role))){
         throw new AppError(403,"You are not permitted to view this route");
     }
-    console.log(verifiedToken)
+   req.user=verifiedToken;
     next()
   } catch (error) {
     next(error)
