@@ -16,6 +16,7 @@ import { IsActive } from "../modules/user/user.interface";
       
     }
     const verifiedToken =verifyToken(accessToken,envVars.JWT_ACCESS_SECRET) as JwtPayload
+   
     // if(!verifiedToken){
     //   throw new AppError(403,"You are not Authorized");
     //   }
@@ -34,6 +35,7 @@ import { IsActive } from "../modules/user/user.interface";
         throw new AppError(403,"You are not permitted to view this route");
     }
    req.user = verifiedToken;
+ 
     next()
   } catch (error) {
     next(error)

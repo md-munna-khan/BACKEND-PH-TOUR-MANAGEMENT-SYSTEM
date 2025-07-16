@@ -67,7 +67,7 @@ const logout = catchAsync(
     sendResponse(res, {
       success: true,
       statusCode: httpStatus.OK,
-      message: "User login Successfully",
+      message: "User logout Successfully",
       data: null
     });
   }
@@ -79,6 +79,7 @@ const resetPassword = catchAsync(
  const oldPassword=req.body.oldPassword;
  const newPassword = req.body.newPassword;
  const decodedToken= req.user
+
 
   await AuthServices.resetpassword(oldPassword,newPassword,decodedToken as JwtPayload) 
     sendResponse(res, {
