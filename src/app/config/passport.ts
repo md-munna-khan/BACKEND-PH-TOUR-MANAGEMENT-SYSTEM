@@ -11,7 +11,7 @@ passport.use(
     new LocalStrategy({
         usernameField:"email",// he want add your email or name no problem
         passwordField:"password"
-    },async (email:string,password:string,done:VerifyCallback)=>{
+    },async (email:string,password:string,done)=>{
 try {
      const isUserExist = await User.findOne({ email });
 
@@ -19,6 +19,13 @@ try {
    return done(null,false,{message:"User Does Not Exist"})
    // (parameter) done: (err?: Error | null | unknown, user?: Express.User | false, info?: object) => voi
   }
+
+    const isGoogleAuthenticated=isUserExist.auths.some(providerObjects=>
+      providerObjects.provider == "google"
+    )
+    if(isGoogleAuthenticated){
+    return done(null,false,{message:"You have  Authenticated Through Google so if you Want to login with Credentials, then at first login with google and set a password for your Gmail and then you can login with email and password "})
+    }
     const isPasswordMatched = await bcryptjs.compare(
     password as string,
    
