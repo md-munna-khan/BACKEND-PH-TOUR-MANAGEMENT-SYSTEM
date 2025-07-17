@@ -12,34 +12,34 @@ import {
 import { JwtPayload } from "jsonwebtoken";
 import { envVars } from "../../config/env";
 
-const credentialsLogin = async (payload: Partial<IUser>) => {
-  const { email, password } = payload;
+// const credentialsLogin = async (payload: Partial<IUser>) => {
+//   const { email, password } = payload;
 
-  const isUserExist = await User.findOne({ email });
+//   const isUserExist = await User.findOne({ email });
 
-  if (!isUserExist) {
-    throw new AppError(httpStatus.BAD_REQUEST, "User does not Exist");
-  }
+//   if (!isUserExist) {
+//     throw new AppError(httpStatus.BAD_REQUEST, "User does not Exist");
+//   }
 
-  const isPasswordMatched = await bcryptjs.compare(
-    password as string,
-    isUserExist.password as string
-  );
-  if (!isPasswordMatched) {
-    throw new AppError(httpStatus.BAD_REQUEST, "incorrect password");
-  }
+//   const isPasswordMatched = await bcryptjs.compare(
+//     password as string,
+//     isUserExist.password as string
+//   );
+//   if (!isPasswordMatched) {
+//     throw new AppError(httpStatus.BAD_REQUEST, "incorrect password");
+//   }
 
 
-  const userTokens = createUserTokens(isUserExist);
+//   const userTokens = createUserTokens(isUserExist);
 
-  // delete isUserExist.password;
-  const { password: pass, ...rest } = isUserExist.toObject();
-  return {
-    accessToken: userTokens.accessToken,
-    refreshToken: userTokens.refreshToken,
-    user: rest,
-  };
-};
+//   // delete isUserExist.password;
+//   const { password: pass, ...rest } = isUserExist.toObject();
+//   return {
+//     accessToken: userTokens.accessToken,
+//     refreshToken: userTokens.refreshToken,
+//     user: rest,
+//   };
+// };
 
 const getNewAccessToken = async (refreshToken: string) => {
   const newAccessToken = await createNewAccessTokenWithRefreshToken(
@@ -74,7 +74,7 @@ const resetpassword = async (
 };
 
 export const AuthServices = {
-  credentialsLogin,
+  // credentialsLogin,
   getNewAccessToken,
   resetpassword,
 };

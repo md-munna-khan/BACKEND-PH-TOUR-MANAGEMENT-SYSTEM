@@ -22,11 +22,11 @@ passport.authenticate("local",async(err:any,user:any,info:any)=>{
 if(err){
   // throw new AppError("some error"); // not working because we are all work in passport js
   
-  // return AppError("some error") // because when you call return you out of passport function
-  return  next(err)
+  // return new AppError( 401,"some error") // because when you call return you out of passport function
+  return  next( new AppError (401,err))
 }
 if(!user){
-  return new AppError(401,info.message)
+   return  next( new AppError(401,info.message))
 }
 const userTokens=await createUserTokens(user)
   const { password: pass, ...rest } = user.toObject();
