@@ -3,12 +3,13 @@ import express, { Request, Response } from "express";
 import cors from "cors";
 import { router } from "./app/modules/routes";
 
-import { globalError } from "./app/middleware/globalErrorHandler";
+
 import notFound from "./app/middleware/notFound";
 import cookieParser from "cookie-parser";
 import passport from "passport";
 import expressSession from "express-session"
 import "./app/config/passport"
+import { globalErrorHandler } from "./app/middleware/globalErrorHandler";
 
 const app = express();
 
@@ -32,6 +33,6 @@ app.get("/", (req: Request, res: Response) => {
 });
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-explicit-any
-app.use(globalError);
+app.use(globalErrorHandler);
 app.use(notFound);
 export default app;
