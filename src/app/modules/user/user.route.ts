@@ -11,7 +11,8 @@ import { Role } from "./user.interface";
 const router = Router();
 
 
-router.post("/register",validateRequest(createUserZodSchema),
+router.post("/register",
+  // validateRequest(createUserZodSchema),
 
   UserController.createUser
 );
