@@ -2,8 +2,6 @@ import express, { Request, Response } from "express";
 
 import cors from "cors";
 import { router } from "./app/modules/routes";
-
-
 import notFound from "./app/middleware/notFound";
 import cookieParser from "cookie-parser";
 import passport from "passport";
