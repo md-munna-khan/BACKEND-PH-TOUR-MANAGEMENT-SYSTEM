@@ -8,9 +8,8 @@ import { UserServices } from "./user.service";
 import { catchAsync } from "../../utils/catchAsync.";
 
 import { sendResponse } from "../../utils/sendResponse";
-import { envVars } from "../../config/env";
-import { verifyToken } from "../../utils/jwt";
-import { Jwt, JwtPayload } from "jsonwebtoken";
+
+import {  JwtPayload } from "jsonwebtoken";
 
 const createUser = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {

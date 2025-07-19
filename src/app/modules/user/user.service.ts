@@ -20,7 +20,8 @@ const authProvider:IAuthProvider={provider:"credentials",providerId:email as str
     auths:[authProvider],
     ...rest,
   });
-  return user;};
+  return user;
+};
   const updateUser = async (userId:string,payload:Partial<IUser>,decodedToken:JwtPayload)=>{
 
 const ifUserExist = await User.findById(userId)
