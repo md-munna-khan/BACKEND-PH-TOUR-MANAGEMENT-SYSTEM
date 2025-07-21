@@ -55,3 +55,6 @@ export interface IPayment {
 }
 ```
 - here we can directly see the payment information inside the booking information we do not need to query for getting the payment information by searching using id. 
+
+## 31-2 Create model for Booking and Payment
+- done in part-3 
