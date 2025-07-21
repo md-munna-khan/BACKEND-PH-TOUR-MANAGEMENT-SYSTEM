@@ -1,6 +1,8 @@
 
 
-import { excludeField } from "../../contants";
+
+
+import { QueryBuilder } from "../../utils/QueryBuilder";
 import {  tourSearchableFields } from "./tour.contant";
 import { ITour, ITourType } from "./tour.interface";
 import { Tour, TourType } from "./tour.model";
@@ -26,43 +28,114 @@ const createTour = async (payload: ITour) => {
     return tour;
 };
 
-const getAllTours = async (query:Record<string,string>) => {
+// const getAllTours = async (query:Record<string,string>) => {
   
-const filter = query
-const searchTerm=query.searchTerm || "";
-const sort =query.sort || "-createdAt";
-const page=Number(query.page) || 1
-const limit=Number (query.limit) || 10
-const skip =(page -1) * Number(limit)
-// field filtering
-const fields =query.fields?.split(",").join(" ") || ""
+// const filter = query
+// const searchTerm=query.searchTerm || "";
+// const sort =query.sort || "-createdAt";
+// const page=Number(query.page) || 1
+// const limit=Number (query.limit) || 10
+// const skip =(page -1) * Number(limit)
+// // field filtering
+// const fields =query.fields?.split(",").join(" ") || ""
 
-// delete filter["searchTerm"]
-// delete filter["sort"]
+// // delete filter["searchTerm"]
+// // delete filter["sort"]
 
 
 
-for (const field of excludeField){
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-    delete filter[field]
-}
+// for (const field of excludeField){
+//     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+//     delete filter[field]
+// }
 
-const searchQuery={
-    $or: tourSearchableFields.map(field => ( {[field]:{$regex: searchTerm,$options:"i" }}))}
+// const searchQuery={
+//     $or: tourSearchableFields.map(field => ( {[field]:{$regex: searchTerm,$options:"i" }}))}
     
-const allTours = await Tour.find(searchQuery).find(filter).sort(sort).select(fields).skip(skip).limit(limit);
+// // const allTours = await Tour.find(searchQuery).find(filter).sort(sort).select(fields).skip(skip).limit(limit);
 
-    const totalTours = await Tour.countDocuments();
-const totalPage=Math.ceil(totalTours/limit)
-    const meta = {
-        page:page,
-           limit:limit,
-        total:totalTours,
-        totalPage:totalPage
-    }
+//    const filterQuery = Tour.find(filter)
+//     const tours = filterQuery.find(searchQuery)
+//     const allTours = await tours.sort(sort as string).select(fields).skip(skip).limit(limit);
+
+
+//     const totalTours = await Tour.countDocuments();
+// const totalPage=Math.ceil(totalTours/limit)
+//     const meta = {
+//         page:page,
+//            limit:limit,
+//         total:totalTours,
+//         totalPage:totalPage
+//     }
+//     return {
+//         data: allTours,
+//         meta: meta
+//     }
+// };
+
+//query builder 
+
+
+
+
+const getAllTours = async (query: Record<string, string>) => {
+    // const filter = query
+    // const searchTerm = query.searchTerm || ""
+
+    // const sort = query.sort || "-createdAt"
+
+    // const page = Number(query.page) || 1
+    // const limit = Number(query.limit) || 10
+
+    // const skip = (page - 1) * limit
+
+    // const fields = (query.fields as string)?.split(",").join(" ") || "";
+
+
+    // for (const field of excludedFields) {
+    //     // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+    //     delete filter[field]
+    // }
+
+
+    // const searchObject = {
+    //     $or: tourSearchableFields.map(field => ({ [field]: { $regex: searchTerm, $options: "i" } }))
+    // }
+
+
+    // const filterQuery = Tour.find(filter) //model Query
+    // const tours = filterQuery.find(searchObject)
+    // const allTours = await tours.sort(sort as string).select(fields).skip(skip).limit(limit); //document
+
+    // all works will be don e by QueryBuilder
+    const queryBuilder = new QueryBuilder(Tour.find(), query)
+
+           const tours = await queryBuilder
+        .search(tourSearchableFields)
+        .filter()
+        .sort()
+        .fields()
+        .paginate()
+       
+    // model query is in last because it will resolve the code. before resolve we want to do search sort filter pagination 
+
+    // const totalTours = await Tour.countDocuments();
+    // const meta = {
+    //     total: totalTours,
+    //     totalPage: Math.ceil(totalTours / limit),
+    //     page: page,
+    //     limit: limit,
+    // }
+       // const meta = await queryBuilder.getMeta()
+      const [data, meta] = await Promise.all([
+        tours.build(),
+        queryBuilder.getMeta()
+    ]) //update for parallel fetching
+
+
     return {
-        data: allTours,
-        meta: meta
+        data,
+        meta
     }
 };
 
