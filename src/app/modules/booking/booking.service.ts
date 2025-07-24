@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 
 import { User } from "../user/user.model";
@@ -8,6 +9,8 @@ import { Payment } from "../payment/payment.model";
 import { PAYMENT_STATUS } from "../payment/payment.interface";
 import { Tour } from "../tour/tour.model";
 import AppError from "../../errorHelpers/app.error";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
 
 
 const getTransactionId = () => {
@@ -61,10 +64,30 @@ const updatedBooking = await
  )
  .populate("user","name email phone address")
  .populate("tour","title costFrom")
- .populate("payment")
+ .populate("payment");
+
+const userAddress=(updatedBooking?.user as any).address
+const userEmail=(updatedBooking?.user as any).email
+const userPhoneNUmber=(updatedBooking?.user as any).phone
+const userName=(updatedBooking?.user as any).name
+
+const sslPayload:ISSLCommerz={
+address:userAddress,
+email:userEmail,
+phoneNumber:userPhoneNUmber,
+name:userName,
+amount:amount,
+transactionId:transactionId
+}
+const sslPayment = await SSLService.sslPaymentInit(sslPayload)
+console.log(sslPayment)
+
  await session.commitTransaction()// transaction
  session.endSession()
- return updatedBooking
+ return {
+    paymentUrl:sslPayment.GatewayPageURL,
+    booking:updatedBooking
+ }
     
 } catch (error) {
     
