@@ -8,7 +8,7 @@ import { ITour, ITourType } from "./tour.interface";
 import { Tour, TourType } from "./tour.model";
 
 const createTour = async (payload: ITour) => {
-     throw new Error("A tour with this title already exists.");
+
     const existingTour = await Tour.findOne({ title: payload.title });
     if (existingTour) {
         throw new Error("A tour with this title already exists.");
@@ -161,6 +161,10 @@ const updateTour = async (id: string, payload: Partial<ITour>) => {
 
     //     payload.slug = slug
     // }
+
+    if(payload.images && payload.images.length >0 && existingTour.images && existingTour.images.length >0){
+        payload.images =[...payload.images,...existingTour.images]
+    }
 
     const updatedTour = await Tour.findByIdAndUpdate(id, payload, { new: true });
 
