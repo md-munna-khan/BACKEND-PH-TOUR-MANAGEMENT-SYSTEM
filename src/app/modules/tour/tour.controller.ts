@@ -8,7 +8,9 @@ import { ITour } from './tour.interface';
 
 
 const createTour = catchAsync(async (req: Request, res: Response) => {
-  console.log(req.body, req.files)
+  console.log(
+    { body:req.body,
+     files:req.files})
 
     const payload:ITour={
         ...req.body,
