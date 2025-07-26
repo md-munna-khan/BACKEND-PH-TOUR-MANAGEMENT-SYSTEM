@@ -1262,3 +1262,28 @@ router.get("/google/callback", passport.authenticate("google", { failureRedirect
 
 ```
 
+## 32-9 Intro to forget password and reset password, generate forgot password link. and 32-10 Setting Up Nodemailer Transporter and sendEmail function
+- Frontend -> forget-password -> email -> user status check -> short expiration token (valid for 10 min) -> email -> Fronted Link http://localhost:5173/reset-password?email=saminisrar1@gmail.com&token=token -> frontend e  query theke user er email and token extract anbo -> new password user theke nibe -> backend er /reset-password api -> authorization = token -> newPassword -> token verify -> password hash -> save user password   
+
+- for this mechanism we need a email sending system 
+- for email sending we will use `nodemailer`
+- install the nodemailer 
+
+```
+npm i nodemailer -f
+```
+```
+npm i @types/nodemailer -f
+```
+- nodemailer is a transporter. 
+
+- for email template we will use `ejs` package. this will directly send html from backend. It Works like html template engine 
+
+```
+npm i ejs -f
+```
+
+```
+npm i @types/ejs -f
+```
+
