@@ -3,7 +3,7 @@ import passport from "passport";
 import { Strategy as GoogleStrategy, Profile, VerifyCallback } from "passport-google-oauth20";
 import { envVars } from "./env";
 import { User } from "../modules/user/user.model";
-import { Role } from "../modules/user/user.interface";
+import { IsActive, Role } from "../modules/user/user.interface";
 import { Strategy as LocalStrategy } from "passport-local";
 import bcryptjs from "bcryptjs";
 
@@ -23,6 +23,19 @@ try {
 // if(!isUserExist){
 //     return done("user Does Not Exist")
 // }
+if(!isUserExist.isVerified){
+    //   throw new AppError(httpStatus.BAD_REQUEST, "User is Not Verified");
+  return  done( "User is Not Verified")
+}
+ if (isUserExist.isActive === IsActive.BLOCKED ||isUserExist.isActive === IsActive.INACTIVE ) {
+    // throw new AppError(httpStatus.BAD_REQUEST,`user is ${isUserExist.isActive}` );
+   return done(`user is ${isUserExist.isActive}`)
+  }
+  if (isUserExist.isDeleted) {
+    // throw new AppError(httpStatus.BAD_REQUEST, "User is Deleted");
+   return done("User is Deleted")
+  }
+
 
     const isGoogleAuthenticated=isUserExist.auths.some(providerObjects=>
       providerObjects.provider == "google"
@@ -65,9 +78,22 @@ callbackURL:envVars.GOOGLE_CALLBACK_URL
             if(!email){
                 return done (null,false,{message:"NO Email Found"})
             }
-            let user=await User.findOne({email})
-            if(!user){
-                user=await User.create({
+            let isUserExist=await User.findOne({email})
+            if(isUserExist && !isUserExist.isVerified){
+    //   throw new AppError(httpStatus.BAD_REQUEST, "User is Not Verified");
+    // done( "User is Not Verified")
+   return done(null,false,{message:"user is not verified"})
+}
+ if (isUserExist && (isUserExist.isActive === IsActive.BLOCKED ||isUserExist.isActive === IsActive.INACTIVE )) {
+    // throw new AppError(httpStatus.BAD_REQUEST,`user is ${isUserExist.isActive}` );
+   return done(`user is ${isUserExist.isActive}`)
+  }
+  if (isUserExist && isUserExist.isDeleted) {
+    // throw new AppError(httpStatus.BAD_REQUEST, "User is Deleted");
+      return done(null,false,{message:"user is deleted"})
+  }
+            if(!isUserExist){
+                isUserExist=await User.create({
                     email,
                     name:profile.displayName,
                     role:Role.USER,
@@ -80,7 +106,7 @@ callbackURL:envVars.GOOGLE_CALLBACK_URL
                     ]
                 })
             }
-            return done(null,user)
+            return done(null,isUserExist)
         } catch (error) {
             console.log("Google Strategy error",error)
             return done(error)

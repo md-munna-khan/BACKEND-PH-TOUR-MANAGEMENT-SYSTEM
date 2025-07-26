@@ -858,5 +858,407 @@ export const TourService = {
 };
 
 ```
+## 32-7 Create Set Password API and Refactor Reset Password Api to Change Password API
+- Those who have been google authenticated and has no password and they want to set password. we will give them a api to set password. 
+- Forget password route will have connection with reset password route 
 
+#### Setting password for google logged in user 
+- auth.route.ts 
+
+```ts 
+
+import { NextFunction, Request, Response, Router } from "express";
+import { AuthControllers } from "./auth.controller";
+import { checkAuth } from '../../middlewares/checkAuth';
+import { Role } from "../user/user.interface";
+import passport from "passport";
+
+const router = Router()
+
+router.post("/login", AuthControllers.credentialsLogin)
+router.post("/refresh-token", AuthControllers.getNewAccessToken)
+router.post("/logout", AuthControllers.logout)
+router.post("/change-password", checkAuth(...Object.values(Role)), AuthControllers.changePassword)
+router.post("/reset-password", checkAuth(...Object.values(Role)), AuthControllers.resetPassword)
+router.post("/set-password", checkAuth(...Object.values(Role)), AuthControllers.setPassword)
+
+//  /booking -> /login -> successful google login -> /booking frontend
+// /login -> successful google login -> / frontend
+router.get("/google", async (req: Request, res: Response, next: NextFunction) => {
+    const redirect = req.query.redirect || "/"
+    passport.authenticate("google", { scope: ["profile", "email"], state: redirect as string })(req, res, next)
+})
+// this kept get because the authentication is done by google and we have nothing to send in body 
+
+// api/v1/auth/google/callback?state=/booking this redirect state will be added in the url by the previous auth login route
+router.get("/google/callback", passport.authenticate("google", { failureRedirect: "/login" }), AuthControllers.googleCallbackController)
+
+// this is for setting the cookies 
+
+
+
+export const authRoutes = router
+```
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
+import passport from "passport";
+
+
+
+const setPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+
+    const decodedToken = req.user as JwtPayload
+    const { password } = req.body
+
+    await AuthServices.setPassword(decodedToken.userId, password)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password reset Successfully",
+        data: null
+    })
+
+})
+
+
+
+export const AuthControllers = {
+
+    setPassword
+}
+
+```
+
+- auth.service.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import AppError from '../../errorHelpers/AppError';
+import { IAuthProvider, IsActive, IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken, verifyToken } from "../../utils/jwt";
+import { envVars } from '../../config/env';
+import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
+import { JwtPayload } from "jsonwebtoken";
+
+
+
+const setPassword = async (userId: string, plainPassword: string) => {
+    const user = await User.findById(userId);
+
+    if (!user) {
+        throw new AppError(404, "User Not Found")
+        // though it will not be used because it will be checked by checkAuth(). still kept for safety 
+    }
+
+    if (user.password && user.auths.some(providerObject => providerObject.provider === "google")) {
+        throw new AppError(httpStatus.BAD_REQUEST, "You have already set you password. Now you can change the password from your profile password update")
+    }
+
+    // .some() checks if at least one item in the array satisfies the given condition.
+    // "Is there any object in the auths array where the provider is "google"?"
+
+    const hashedPassword = await bcrypt.hash(
+        plainPassword,
+        Number(envVars.BCRYPT_SALT_ROUND)
+    )
+
+    const credentialProvider: IAuthProvider = {
+        provider: "credentials",
+        providerId: user.email
+    }
+
+    const auths: IAuthProvider[] = [...user.auths, credentialProvider]
+
+    user.password = hashedPassword
+
+    user.auths = auths
+
+    await user.save()
+
+}
+export const AuthServices = {
+    setPassword
+}
+```
+## 32-8 User status check during login, Create API to Get My Profile
+#### get my profile functionality 
+- user.route.ts 
+
+```ts 
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema, updateUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+router.get("/me", checkAuth(...Object.values(Role)), userControllers.getMe)
+
+
+export const UserRoutes = router
+```
+- user.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
+import { NextFunction, Request, Response } from "express";
+
+import httpStatus from "http-status-codes"
+
+import { userServices } from "./user.service";
+
+import { sendResponse } from "../../utils/sendResponse";
+import { verifyToken } from '../../utils/jwt';
+import { envVars } from "../../config/env";
+import { JwtPayload } from "jsonwebtoken";
+import { catchAsync } from "../../utils/catchAsync";
+
+
+const getMe = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const decodedToken = req.user as JwtPayload
+    const result = await userServices.getMe(decodedToken.userId);
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.CREATED,
+        message: "Your profile Retrieved Successfully",
+        data: result.data
+    })
+})
+export const userControllers = {
+
+    getMe,
+
+}
+```
+
+- user.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser, Role } from "./user.interface";
+import { User } from "./user.model";
+import httpStatus from 'http-status-codes';
+import bcrypt from "bcryptjs";
+import { JwtPayload } from "jsonwebtoken";
+import { envVars } from "../../config/env";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { userSearchableFields } from "./user.constant";
+
+
+const getMe = async (userId: string) => {
+    const user = await User.findById(userId).select("-password");
+    return {
+        data: user
+    }
+};
+
+export const userServices = {
+
+    getMe
+}
+```
+
+#### Now we have a flaw in our system like we are checking user status in checkAuth() i mean we are checking after login. but we should not allow to login if status is not right. 
+
+- passport.ts 
+
+```ts 
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { Strategy as GoogleStrategy, Profile, VerifyCallback } from "passport-google-oauth20";
+import { envVars } from "./env";
+import { User } from "../modules/user/user.model";
+import { IsActive, Role } from "../modules/user/user.interface";
+import passport from "passport";
+import { Strategy as LocalStrategy } from "passport-local";
+import bcrypt from 'bcryptjs';
+
+
+
+passport.use(
+    new LocalStrategy(
+        {
+            usernameField: "email",
+            passwordField: "password"
+            // these will be passed to the verify function 
+        },
+        //  we do not need to give the done type for local as it automatically infers 
+        async (email: string, password: string, done) => {
+            // there will be the business logics that will hold the functionalities that we have done in credentialsLogin
+            try {
+                const isUserExist = await User.findOne({ email })
+
+                // we are just handling login here and register will be done separately. 
+                // It will not create user automatically if user do not exists like google login because we have no data of user at this point except email and password. 
+                if (!isUserExist) {
+                    // return done(null, false, { message: "User Not Found" })
+                    return done("User Not Found")
+                }
+
+                if (!isUserExist.isVerified) {
+                    return done(`User Is Not Verified`)
+                }
+
+
+                if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+                    return done(`User Is ${isUserExist.isActive}`)
+                }
+                if (isUserExist.isDeleted) {
+                    return done(`User Is Deleted`)
+                }
+
+                // Returns true if any item in array matches the condition
+                // .some() is specifically designed for checking if at least one item in an array matches a condition — and it can short-circuit
+                const isGoogleAuthenticated = isUserExist.auths.some(providerObjects => providerObjects.provider == "google")
+
+                if (isGoogleAuthenticated && !isUserExist.password) {
+                    return done(null, false, { message: "You have authenticated through Google. So if you want to login with credentials, then at first login with google and set a password for your Gmail and then you can login with email and password." })
+                }
+
+                const isPasswordMatch = await bcrypt.compare(password as string, isUserExist.password as string)
+
+                if (!isPasswordMatch) {
+                    return done(null, false, { message: "Password Does Not Match" })
+                }
+
+                return done(null, isUserExist)
+
+                // here is a catch that google login user do not have password. we do not have password for login in here.
+                // we have to manage this issue by adding password field 
+                // we will send a message that if you logged in using google please set the password or just login using google again 
+
+            } catch (error) {
+                console.log(error)
+                return done(error) // this is acting like next(error)
+            }
+        }
+    )
+)
+
+passport.use(
+    new GoogleStrategy(
+        {
+            // options
+            clientID: envVars.GOOGLE_CLIENT_ID,
+            clientSecret: envVars.GOOGLE_CLIENT_SECRET,
+            callbackURL: envVars.GOOGLE_CALLBACK_URL
+        }, async (accessToken: string, refreshToken: string, profile: Profile, done: VerifyCallback) => {
+            // verify
+            try {
+
+                const email = profile.emails?.[0].value
+
+                // we are checking if the user is exist in cloud 
+                if (!email) {
+                    return done(null, false, { message: "No Email Found !" }) //its like throw new app error and passport has its own 
+                }
+
+                let isUserExist = await User.findOne({ email })
+                if (isUserExist && !isUserExist.isVerified) {
+                    // throw new AppError(httpStatus.BAD_REQUEST, "User is not verified")
+                    // done("User is not verified")
+                    return done(null, false, { message: "User is not verified" })
+                }
+
+                if (isUserExist && (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE)) {
+                    // throw new AppError(httpStatus.BAD_REQUEST, `User is ${isUserExist.isActive}`)
+                    done(`User is ${isUserExist.isActive}`)
+                }
+
+                if (isUserExist && isUserExist.isDeleted) {
+                    return done(null, false, { message: "User is deleted" })
+                    // done("User is deleted")
+                }
+
+                if (!isUserExist) {
+                    isUserExist = await User.create(
+                        {
+                            email,
+                            name: profile.displayName,
+                            picture: profile.photos?.[0].value,
+                            role: Role.USER,
+                            isVerified: true,
+                            auths: [
+                                {
+                                    provider: "google",
+                                    providerId: profile.id
+                                }
+                            ]
+                        }
+                    )
+                }
+
+                return done(null, isUserExist) // will set the user to req.user
+
+            } catch (error) {
+                console.log("Google Strategy Error", error)
+
+                return done(error)
+            }
+        }
+    ))
+
+
+
+// frontend localhost:5173/login?redirect=/booking -> localhost:5000/api/v1/auth/google?redirect=/booking -> passport -> Google OAuth Consent -> gmail login -> successful -> after successful login will send to callback url localhost:5000/api/v1/auth/google/callback -> db store -> token
+
+// Bridge == Google -> user db store -> token
+//Custom -> email , password, role : USER, name... -> registration -> DB -> 1 User create
+//Google -> req -> google -> successful : Jwt Token : Role , email -> DB - Store -> token - api access
+
+// serialize the passport 
+
+// Serializes the user (stores minimal info like user ID in the session)
+
+passport.serializeUser((user: any, done: (err: any, id?: unknown) => void) => {
+    done(null, user._id)
+})
+
+//Deserializes the user (retrieves the full user object from the DB based on that ID for each request)
+
+passport.deserializeUser(async (id: string, done: any) => {
+    try {
+        const user = await User.findById(id);
+        done(null, user)
+    } catch (error) {
+        console.log(error);
+        done(error)
+    }
+})
+```
+- Update in auth.route.ts for redirecting user if any validation fails in passport.ts 
+
+
+```ts 
+router.get("/google/callback", passport.authenticate("google", { failureRedirect: `${envVars.FRONTEND_URL}/login?error=There is some issues with your account. Please contact with out support team!` }), AuthControllers.googleCallbackController)
+
+```
 

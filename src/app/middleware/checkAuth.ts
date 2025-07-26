@@ -21,9 +21,14 @@ import { IsActive } from "../modules/user/user.interface";
     //   throw new AppError(403,"You are not Authorized");
     //   }
  const isUserExist = await User.findOne({ email:verifiedToken.email});
-  if (!isUserExist) {
+ 
+ 
+ if (!isUserExist) {
     throw new AppError(httpStatus.BAD_REQUEST, "User does not Exist");
   }
+   if(!isUserExist.isVerified){
+      throw new AppError(httpStatus.BAD_REQUEST, "User is Not Verified ");
+}
   if (isUserExist.isActive === IsActive.BLOCKED ||isUserExist.isActive === IsActive.INACTIVE ) {
     throw new AppError(httpStatus.BAD_REQUEST,`user is ${isUserExist.isActive}` );
   }
