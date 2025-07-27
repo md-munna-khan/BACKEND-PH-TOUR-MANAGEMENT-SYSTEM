@@ -17,19 +17,18 @@ router.post(
   checkAuth(...Object.values(Role)),
   AuthControllers.changePassword
 );
-router.post(
-  "/reset-password",
-  checkAuth(...Object.values(Role)),
-  AuthControllers.resetPassword
-);
+
 router.post(
   "/set-password",
   checkAuth(...Object.values(Role)),
   AuthControllers.setPassword
 );
-router.post(
-  "/forgot-password",AuthControllers.setPassword);
+router.post("/forgot-password",AuthControllers.forgotPassword);
   
+  router.post( "/reset-password",
+  checkAuth(...Object.values(Role)),
+  AuthControllers.resetPassword
+);
 router.get(
   "/google",
   async (req: Request, res: Response, next: NextFunction) => {
