@@ -1262,3 +1262,312 @@ router.get("/google/callback", passport.authenticate("google", { failureRedirect
 
 ```
 
+## 32-9 Intro to forget password and reset password, generate forgot password link. and 32-10 Setting Up Nodemailer Transporter and sendEmail function
+- Frontend -> forget-password -> email -> user status check -> short expiration token (valid for 10 min) -> email -> Fronted Link http://localhost:5173/reset-password?email=saminisrar1@gmail.com&token=token -> frontend e  query theke user er email and token extract anbo -> new password user theke nibe -> backend er /reset-password api -> authorization = token -> newPassword -> token verify -> password hash -> save user password   
+
+- for this mechanism we need a email sending system 
+- for email sending we will use `nodemailer`
+- install the nodemailer 
+
+```
+npm i nodemailer -f
+```
+```
+npm i @types/nodemailer -f
+```
+- nodemailer is a transporter. 
+
+- for email template we will use `ejs` package. this will directly send html from backend. It Works like html template engine 
+
+```
+npm i ejs -f
+```
+
+```
+npm i @types/ejs -f
+```
+
+
+
+- utils -> forgetPassword.ejs 
+
+```html
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Forgot Password</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background: #f7f7f7;
+        color: #333;
+      }
+      .container {
+        max-width: 500px;
+        margin: 40px auto;
+        background: #fff;
+        padding: 30px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      }
+      .btn {
+        display: inline-block;
+        padding: 12px 24px;
+        background: #007bff;
+        color: #fff;
+        text-decoration: none;
+        border-radius: 4px;
+        margin-top: 20px;
+      }
+      .footer {
+        margin-top: 30px;
+        font-size: 12px;
+        color: #888;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h2>Password Reset Request</h2>
+      <p>Hello <%= name %>,</p>
+      <p>
+        We received a request to reset your password for your account. Click the
+        button below to set a new password:
+      </p>
+      <a class="btn" href="<%= resetUILink %>">Reset Password</a>
+      <p>
+        If you did not request a password reset, please ignore this email. This
+        link will expire in 10 minutes.
+      </p>
+      <div class="footer">&copy; PH Tour Management. All rights reserved.</div>
+    </div>
+  </body>
+</html>
+```
+-  utils -> sendEmail.ts 
+
+```ts 
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import nodemailer from "nodemailer"
+import { envVars } from '../config/env';
+import path from "path"
+import ejs from "ejs"
+import AppError from "../errorHelpers/AppError";
+const transporter = nodemailer.createTransport({
+    secure: true,
+    auth: {
+        user: envVars.EMAIL_SENDER.SMTP_USER,
+        pass: envVars.EMAIL_SENDER.SMTP_PASS,
+    },
+    port: Number(envVars.EMAIL_SENDER.SMTP_PORT),
+    host: envVars.EMAIL_SENDER.SMTP_HOST,
+})
+
+interface sendEmailOptions {
+    to: string,
+    subject: string,
+    templateName: string, //html templateName
+    templateData?: Record<string, any>, // html template data which will be object 
+    attachments?: {
+        fileName: string,
+        content: Buffer | string,
+        contentType: string
+    }[]
+}
+
+export const sendEmail = async ({ to, subject, attachments, templateName, templateData }: sendEmailOptions) => {
+
+    try {
+        const templatePath = path.join(__dirname, `templates/${templateName}.ejs`) //grabbing the file path for ejs 
+
+        const html = await ejs.renderFile(templatePath, templateData)
+
+        const info = await transporter.sendMail({
+            from: envVars.EMAIL_SENDER.SMTP_FROM,
+            to: to,
+            subject: subject,
+            html: html, // we will make the template using ejs package 
+            attachments: attachments?.map(attachment => (
+                {
+                    fileName: attachment.fileName,
+                    content: attachment.content,
+                    contentType: attachment.contentType
+                }
+            ))
+        })
+
+        console.log(`\u2709\uFE0F Email sent to ${to}: ${info.messageId}`);
+    } catch (error: any) {
+        console.log("email sending error", error.message);
+        throw new AppError(401, "Email error")
+
+    }
+}
+```
+## 32-11 Send email using nodemailer when hitting forget password route
+
+- auth route.ts 
+
+```ts 
+
+import { NextFunction, Request, Response, Router } from "express";
+import { AuthControllers } from "./auth.controller";
+import { checkAuth } from '../../middlewares/checkAuth';
+import { Role } from "../user/user.interface";
+import passport from "passport";
+import { envVars } from "../../config/env";
+
+const router = Router()
+router.post("/forgot-password", AuthControllers.forgotPassword)
+router.post("/reset-password", checkAuth(...Object.values(Role)), AuthControllers.resetPassword)
+
+export const authRoutes = router
+```
+- auth.controller.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import { NextFunction, Request, Response } from "express"
+
+import { sendResponse } from "../../utils/sendResponse"
+import httpStatus from 'http-status-codes';
+import { AuthServices } from "./auth.service";
+import { catchAsync } from "../../utils/catchAsync";
+import AppError from "../../errorHelpers/AppError";
+import { setAuthCookie } from "../../utils/setCookie";
+import bcrypt from 'bcryptjs';
+import { JwtPayload } from "jsonwebtoken";
+import { createUserToken } from "../../utils/userToken";
+import { envVars } from "../../config/env";
+import passport from "passport";
+
+
+const forgotPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const { email } = req.body
+
+    await AuthServices.forgotPassword(email)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "Email Sent Successfully",
+        data: null
+    })
+
+})
+
+const resetPassword = catchAsync(async (req: Request, res: Response, next: NextFunction) => {
+    const { newPassword, id } = req.body
+    const decodedToken = req.user
+
+    await AuthServices.resetPassword(req.body, decodedToken as JwtPayload)
+
+
+    sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "password reset Successfully",
+        data: null
+    })
+
+})
+
+
+
+export const AuthControllers = {
+    resetPassword,
+    forgotPassword
+}
+
+```
+
+- auth.service.ts 
+
+```ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import AppError from '../../errorHelpers/AppError';
+import { IAuthProvider, IsActive, IUser } from "../user/user.interface"
+import httpStatus from 'http-status-codes';
+import { User } from "../user/user.model";
+import bcrypt from "bcryptjs";
+import { generateToken, verifyToken } from "../../utils/jwt";
+import { envVars } from '../../config/env';
+import { createNewAccessTokenWithRefreshToken, createUserToken } from "../../utils/userToken";
+import { JwtPayload } from "jsonwebtoken";
+import jwt from 'jsonwebtoken';
+import { sendEmail } from '../../utils/sendEmail';
+
+
+const forgotPassword = async (email: string) => {
+    const isUserExist = await User.findOne({ email })
+
+    if (!isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Does Not Exist")
+    }
+
+    if (!isUserExist.isVerified) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User is not verified")
+    }
+
+    if (isUserExist.isActive === IsActive.BLOCKED || isUserExist.isActive === IsActive.INACTIVE) {
+        throw new AppError(httpStatus.BAD_REQUEST, `User Is ${isUserExist.isActive}`)
+    }
+    if (isUserExist.isDeleted) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Is Deleted")
+    }
+
+    const jwtPayload = {
+        userId: isUserExist._id,
+        email: isUserExist.email,
+        role: isUserExist.role
+    }
+
+    const resetToken = jwt.sign(jwtPayload, envVars.JWT_ACCESS_SECRET, {
+        expiresIn: "10m"
+    })
+
+    const resetUILink = `${envVars.FRONTEND_URL}/reset-password?id=${isUserExist._id}&token=${resetToken}`
+
+    sendEmail({
+        to: isUserExist.email,
+        subject: "Password Reset",
+        templateName: "forgetPassword",
+        templateData: {
+            name: isUserExist.name,
+            resetUILink
+        }
+    })
+
+
+}
+
+const resetPassword = async (payload: Record<string, any>, decodedToken: JwtPayload) => {
+    if (payload.id != decodedToken.userId) {
+        throw new AppError(401, "You can not reset your password")
+    }
+
+    const isUserExist = await User.findById(decodedToken.userId)
+    if (!isUserExist) {
+        throw new AppError(401, "User does not exist")
+    }
+
+    const hashedPassword = await bcrypt.hash(
+        payload.newPassword,
+        Number(envVars.BCRYPT_SALT_ROUND)
+    )
+
+    isUserExist.password = hashedPassword;
+
+    await isUserExist.save()
+}
+export const AuthServices = {
+    resetPassword,
+    forgotPassword
+}
+```
