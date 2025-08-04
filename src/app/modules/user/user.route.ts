@@ -25,6 +25,7 @@ router.get(
   checkAuth(...Object.values(Role)),
   UserController.getMe
 );
+router.get("/:id",checkAuth(Role.ADMIN, Role.SUPER_ADMIN), UserController.getSingleUser)
 
 router.patch(
   "/:id",
