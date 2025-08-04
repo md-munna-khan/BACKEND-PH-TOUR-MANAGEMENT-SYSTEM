@@ -12,7 +12,7 @@ export interface IInvoiceData {
     totalAmount: number;
 }
 
-export const generatePdf = async (invoiceData: IInvoiceData)=> {
+export const generatePdf = async (invoiceData: IInvoiceData):Promise<Buffer<ArrayBufferLike>>=> {
     try {
         // being async function we have explicitly used Promise here because we are using stream system to load the data. 
 

@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+
 export enum BOOKING_STATUS {
     PENDING = "PENDING",
     CANCEL = "CANCEL",
@@ -6,9 +7,10 @@ export enum BOOKING_STATUS {
     COMPLETE = "COMPLETE"
 }
 export interface IBooking {
-    user: Types.ObjectId,
+    user: Types.ObjectId ,
     tour: Types.ObjectId,
-    payment?: Types.ObjectId,
+    payment?: Types.ObjectId ,
     guestCount : number,
-    status: BOOKING_STATUS
+    status: BOOKING_STATUS,
+    createdAt?:Date
 }

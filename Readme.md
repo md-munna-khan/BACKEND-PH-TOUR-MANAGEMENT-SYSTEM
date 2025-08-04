@@ -585,3 +585,1355 @@ export const generatePdf = async (invoiceData: IInvoiceData)=> {
 
 - here only the buffer is created through the function 
 - now from the buffer we have to create a pdf and upload in cloudinary and send the uploaded link to email and as well we have to store te link in database `invoiceUrl`
+
+
+
+
+## 33-5 Send Email of the PDF to user After Successful payment with SSLCommerz
+ - utils -> invoice.ejs
+
+```ts
+<h1>Invoice for Booking: <%= tourTitle %></h1>
+<p><strong>Payment ID:</strong> <%= transactionId %></p>
+<p><strong>Amount Paid:</strong> $<%= totalAmount %></p>
+<p><strong>Booking Date:</strong> <%= bookingDate %></p>
+<p><strong>Guest Count:</strong> <%= guestCount %></p>
+<p><strong>User:</strong> <%= userName %></p>
+<p>Thank you for your booking!</p>
+```
+- you add functionality dynamically
+
+
+- payment service.ts
+```ts
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+import AppError from "../../errorHelpers/app.error";
+import { generatePdf, IInvoiceData } from "../../utils/invoice";
+import { ITour } from "../tour/tour.interface";
+import { IUser } from "../user/user.interface";
+import { sendEmail } from "../../utils/sendEmail";
+
+const initPayment = async (bookingId: string) => {
+
+    const payment = await Payment.findOne({ booking: bookingId })
+
+    if (!payment) {
+        throw new AppError(httpStatus.NOT_FOUND, "Payment Not Found. You have not booked this tour")
+    }
+
+    const booking = await Booking.findById(payment.booking)
+
+    const userAddress = (booking?.user as any).address
+    const userEmail = (booking?.user as any).email
+    const userPhoneNumber = (booking?.user as any).phone
+    const userName = (booking?.user as any).name
+
+    const sslPayload: ISSLCommerz = {
+        address: userAddress,
+        email: userEmail,
+        phoneNumber: userPhoneNumber,
+        name: userName,
+        amount: payment.amount,
+        transactionId: payment.transactionId
+    }
+
+    const sslPayment = await SSLService.sslPaymentInit(sslPayload)
+
+    return {
+        paymentUrl: sslPayment.GatewayPageURL
+    }
+
+};
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to COnfirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+          if (!updatedPayment) {
+ throw new AppError(httpStatus.NOT_FOUND, "Not payment Found")
+    }
+
+      const updatedBooking =   await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                {new:true, runValidators: true, session }
+            ).populate("tour","title")
+            .populate("user","name email")
+            //.populate(path = user , select if need more selector you can need but , coma not use because if use coma he understand it is model?, model?, options?)
+
+
+  if (!updatedBooking) {
+ throw new AppError(httpStatus.NOT_FOUND, "Not Updated booking Found")
+    }
+
+const invoiceData :IInvoiceData={
+    bookingDate:updatedBooking?.createdAt as Date,
+    guestCount:updatedBooking.guestCount,
+    totalAmount:updatedPayment.amount,
+    tourTitle:(updatedBooking.tour as unknown as ITour).title,
+    transactionId:updatedPayment.transactionId,
+    userName:(updatedBooking.tour as unknown as IUser).name,
+
+}
+
+const pdfBuffer = await generatePdf(invoiceData)
+
+  await sendEmail({
+            to: (updatedBooking.user as unknown as IUser).email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    fileName: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        })
+
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+const failPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to FAIL
+    // Update Payment Status to FAIL
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.FAILED,
+        }, { new: true, runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.FAILED },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: false, message: "Payment Failed" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+const cancelPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to CANCEL
+    // Update Payment Status to CANCEL
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.CANCELLED,
+        }, { runValidators: true, session: session })
+
+        await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.CANCEL },
+                { runValidators: true, session }
+            )
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: false, message: "Payment Cancelled" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+
+
+export const PaymentService = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+};
+```
+
+- invoice.ts
+```ts
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import PDFDocument from "pdfkit";
+import AppError from "../errorHelpers/app.error";
+
+
+export interface IInvoiceData {
+    transactionId: string;
+    bookingDate: Date;
+    userName: string;
+    tourTitle: string;
+    guestCount: number;
+    totalAmount: number;
+}
+
+export const generatePdf = async (invoiceData: IInvoiceData):Promise<Buffer<ArrayBufferLike>>=> {
+    try {
+        // being async function we have explicitly used Promise here because we are using stream system to load the data. 
+
+
+        // async/await works only with functions that already return a promise.
+        // doc.on("end", ...) is callback-style, so you must manually wrap it in a Promise to make it await-compatible.
+        return new Promise((resolve, reject) => {
+            const doc = new PDFDocument({ size: "A4", margin: 50 }) 
+            // Creates a new PDFDocument instance (PDFKit). Not explaining PDFKit specifics.
+            const buffer: Uint8Array[] = []; 
+            //Creates an array named buffer to temporarily store chunks of binary data emitted by the PDF generator.
+            // here we are taking an array of buffer which is a type of  UNit8Array[] made for buffer 
+            // in this array we will store the buffered data in chunk by chunk
+
+
+            doc.on("data", (chunk) => buffer.push(chunk)) 
+            // wEvery time the document emits a "data" event (a chunk of PDF bytes), push it into buffer.
+            doc.on("end", () => resolve(Buffer.concat(buffer)))
+            //when all chunks are loaded we will concat the chunks and add it taking from the buffer.
+            //here big B buffer is coming from javascript its grabbing the buffer array
+            // Concatenate all chunks from buffer into a single Buffer,
+            doc.on("error", (err) => reject(err))
+
+            //PDF Content
+            doc.fontSize(20).text("Invoice", { align: "center" });
+            doc.moveDown()
+            doc.fontSize(14).text(`Transaction ID : ${invoiceData.transactionId}`)
+            doc.text(`Booking Date : ${invoiceData.bookingDate}`)
+            doc.text(`Customer : ${invoiceData.userName}`)
+
+            doc.moveDown();
+            doc.text(`Tour: ${invoiceData.tourTitle}`);
+            doc.text(`Guests: ${invoiceData.guestCount}`);
+            doc.text(`Total Amount: $${invoiceData.totalAmount.toFixed(2)}`);
+            doc.moveDown();
+
+            doc.text("Thank you for booking with us!", { align: "center" });
+            doc.end()
+
+        })
+
+    } catch (error: any) {
+        console.log(error);
+        throw new AppError(401, `Pdf creation error ${error.message}`)
+    }
+}
+```
+
+## 33-6 Upload Invoice PDF to Cloudinary and get Invoice Download URL
+
+- Now lets upload the generated invoice pdf to the cloudinary. 
+- Here `multer` will not help us because we are not taking the file from request body we are generating the file on the go after successful payment.  
+- For this reason we have to upload manually in cloudinary. 
+- WE have to make a function for cloudinary manual upload. 
+- Remember we will use buffer and streaming system upload. for this reason we will listen the buffer and upload the buffer in cloudinary.
+
+#### Use case of stream buffer
+- **Stream** = “Serve tea directly into the guest’s cup as it’s pouring.”
+- **Buffer** = “Fill the entire teapot, then serve.”
+- **Stream + Buffer** = “Collect tea drops in a pot (stream), then later serve the full pot (buffer).”
+
+- this is the reason we will use stream and buffer at the same time 
+
+#### Lets configure the cloudinary.config.ts for streaming upload(manual) in cloudinary
+- we already have a Buffer generated from the generatePdf function
+- now we need to convert the buffer to a stream for uploading into cloudinary as stream 
+- full procedure 
+
+```
+Buffer (PDF)  
+   ↓  
+Node.js Stream (upload_stream)  
+   ↓  
+Cloudinary API  
+   ↓  
+Upload complete → returns Cloudinary URL & metadata.
+
+
+| Method         | What it does                  | Does it close the stream? |
+| -------------- | ----------------------------- | ------------------------- |
+| `.write(data)` | Sends data to the stream.     | ❌ No, keeps stream open.  |
+| `.end(data)`   | Sends final data & closes it. | ✅ Yes.                    |
+
+
+```
+- cloudinary.config.ts
+
+```ts
+/* eslint-disable no-console */
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { v2 as cloudinary } from 'cloudinary';
+import { envVars } from './env';
+import AppError from '../errorHelpers/AppError';
+
+import stream from "stream"
+import { UploadApiResponse } from 'cloudinary';
+
+
+cloudinary.config({
+    cloud_name: envVars.CLOUDINARY.CLOUDINARY_CLOUD_NAME,
+    api_key: envVars.CLOUDINARY.CLOUDINARY_API_KEY,
+    api_secret: envVars.CLOUDINARY.CLOUDINARY_API_SECRET
+})
+
+// cloudinary.v2.uploader.upload(file, options).then(callback);
+// this is the system of cloudinary but we will do it using a package.
+// this package will take the file and will do the work and will return the url inside the req.file object 
+
+export const deleteImageFromCloudinary = async (url: string) => {
+    try {
+        const regex = /\/v\d+\/(.*?)\.(jpg|jpeg|png|gif|webp)$/i;
+        const match = url.match(regex);
+
+        console.log({ match })
+        if (match && match[1]) {
+            const public_id = match[1];
+            await cloudinary.uploader.destroy(public_id)
+            console.log(`File ${public_id} is deleted from cloudinary`);
+        }
+    } catch (error: any) {
+        throw new AppError(401, "Cloudinary image deletion failed", error.message)
+    }
+}
+// This function converts your Buffer into a stream and uploads it.
+export const uploadBufferToCloudinary = async (buffer: Buffer, fileName: string) : Promise<UploadApiResponse | undefined>  => {
+    // It returns a Promise that will eventually resolve to "Hello".
+
+    try {
+        // cloudinary upload function doesn’t return a Promise, so you must manually wrap it
+
+        return new Promise((resolve, reject) => {
+            const public_id = `pdf/${fileName}-${Date.now()}`
+
+
+            // converting the buffer in stream 
+            const bufferStream = new stream.PassThrough()
+            // PassThrough is a special Node.js stream that lets you push a Buffer and treat it as a readable stream.
+            bufferStream.end(buffer)
+
+            // Writes the last chunk of data (buffer) to the stream.
+
+
+            // template cloudinary.uploader.upload_stream(options, callback)
+
+            cloudinary.uploader.upload_stream(
+                {
+                    resource_type: "auto",
+                    public_id: public_id,
+                    folder: "pdf"
+                },
+                (error, result) => {
+                    if (error) {
+                        return reject(error);
+                    }
+                    resolve(result)
+                }
+            ).end(buffer)
+            // You immediately .end(buffer) → This writes the entire buffer to that stream.
+            // .end(buffer) Writes your entire buffer to the Cloudinary stream.
+            // Closes the stream so Cloudinary can finish uploading.
+
+
+
+        })
+    } catch (error: any) {
+        console.log(error);
+        throw new AppError(401, `Error uploading file ${error.message}`)
+    }
+}
+export const cloudinaryUpload = cloudinary
+```
+
+- payment.service.ts 
+
+```ts 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+import { generatePdf, IInvoiceData } from "../../utils/invoice";
+import { ITour } from "../tour/tour.interface";
+import { IUser } from "../user/user.interface";
+import { sendEmail } from "../../utils/sendEmail";
+import { uploadBufferToCloudinary } from "../../config/cloudinary.config";
+
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to Confirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+
+        // this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedPayment) {
+            throw new AppError(401, "Payment not found")
+        }
+
+        // we are holding the file as we need to generate pdf and need some information
+        const updatedBooking = await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                { new: true, runValidators: true, session }
+            )
+            .populate("tour", "title")
+            .populate("user", "name email")
+        // we are population since we are just storing the id and we need the info for generating the  invoice pdf 
+
+        //  this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedBooking) {
+            throw new AppError(401, "Booking not found")
+        }
+
+        const invoiceData: IInvoiceData = {
+            bookingDate: updatedBooking.createdAt as Date,
+            guestCount: updatedBooking.guestCount,
+            totalAmount: updatedPayment.amount,
+            tourTitle: (updatedBooking.tour as unknown as ITour).title, // as we have populated
+            transactionId: updatedPayment.transactionId,
+            userName: (updatedBooking.user as unknown as IUser).name // as we populated
+        }
+        const pdfBuffer = await generatePdf(invoiceData)
+
+        // uploading in cloudinary 
+// using any for now 
+        const cloudinaryResult  = await uploadBufferToCloudinary(pdfBuffer, "invoice")
+        // console.log({cloudinaryResult})
+
+        if(!cloudinaryResult){
+            throw new AppError(401, "Error Uploading Pdf")
+        }
+
+        // update our booking 
+
+        await Payment.findByIdAndUpdate(updatedPayment._id, {invoiceUrl : cloudinaryResult.secure_url}, {runValidators:true, session})
+
+          await sendEmail({
+            to: (updatedBooking.user as unknown as IUser).email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    filename: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        })
+
+
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+
+
+
+export const PaymentService = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+};
+```
+
+#### lets make a route for getting the get downloadInvoice url
+- payment.route.ts 
+
+
+```ts 
+import express from "express";
+import { PaymentController } from "./payment.controller";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "../user/user.interface";
+
+
+const router = express.Router();
+
+
+router.post("/init-payment/:bookingId", PaymentController.initPayment);
+router.post("/success", PaymentController.successPayment);
+router.post("/fail", PaymentController.failPayment);
+router.post("/cancel", PaymentController.cancelPayment);
+router.get("/invoice/:paymentId", checkAuth(...Object.values(Role)), PaymentController.getInvoiceDownloadUrl);
+export const PaymentRoutes = router;
+```
+- payment.controller.ts 
+
+```ts
+import { Request, Response } from "express";
+import { envVars } from "../../config/env";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { PaymentService } from "./payment.service";
+
+const successPayment = catchAsync(async (req: Request, res: Response) => {
+    const query = req.query
+    const result = await PaymentService.successPayment(query as Record<string, string>)
+
+    if (result.success) {
+        res.redirect(`${envVars.SSL.SSL_SUCCESS_FRONTEND_URL}?transactionId=${query.transactionId}&message=${result.message}&amount=${query.amount}&status=${query.status}`)
+    }
+});
+
+
+const getInvoiceDownloadUrl = catchAsync(
+    async (req: Request, res: Response) => {
+        const { paymentId } = req.params;
+        const result = await PaymentService.getInvoiceDownloadUrl(paymentId);
+        sendResponse(res, {
+            statusCode: 200,
+            success: true,
+            message: "Invoice download URL retrieved successfully",
+            data: result,
+        });
+    }
+);
+
+export const PaymentController = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+    getInvoiceDownloadUrl
+};
+```
+
+- payment.service.ts
+
+```ts
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import httpStatus from "http-status-codes";
+import AppError from "../../errorHelpers/AppError";
+import { BOOKING_STATUS } from "../booking/booking.interface";
+import { Booking } from "../booking/booking.model";
+import { ISSLCommerz } from "../sslCommerz/sslCommerz.interface";
+import { SSLService } from "../sslCommerz/sslCommerz.service";
+import { PAYMENT_STATUS } from "./payment.interface";
+import { Payment } from "./payment.model";
+import { generatePdf, IInvoiceData } from "../../utils/invoice";
+import { ITour } from "../tour/tour.interface";
+import { IUser } from "../user/user.interface";
+import { sendEmail } from "../../utils/sendEmail";
+import { uploadBufferToCloudinary } from "../../config/cloudinary.config";
+
+
+const successPayment = async (query: Record<string, string>) => {
+
+    // Update Booking Status to COnfirm 
+    // Update Payment Status to PAID
+
+    const session = await Booking.startSession();
+    session.startTransaction()
+
+    try {
+
+
+        const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
+            status: PAYMENT_STATUS.PAID,
+        }, { new: true, runValidators: true, session: session })
+
+        // this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedPayment) {
+            throw new AppError(401, "Payment not found")
+        }
+
+        // we are holding the file as we need to generate pdf and need some information
+        const updatedBooking = await Booking
+            .findByIdAndUpdate(
+                updatedPayment?.booking,
+                { status: BOOKING_STATUS.COMPLETE },
+                { new: true, runValidators: true, session }
+            )
+            .populate("tour", "title")
+            .populate("user", "name email")
+        // we are population since we are just storing the id and we need the info for generating the  invoice pdf 
+
+        //  this is a safety check though it wil not be used. safety will be checked earlier 
+        if (!updatedBooking) {
+            throw new AppError(401, "Booking not found")
+        }
+
+        const invoiceData: IInvoiceData = {
+            bookingDate: updatedBooking.createdAt as Date,
+            guestCount: updatedBooking.guestCount,
+            totalAmount: updatedPayment.amount,
+            tourTitle: (updatedBooking.tour as unknown as ITour).title, // as we have populated
+            transactionId: updatedPayment.transactionId,
+            userName: (updatedBooking.user as unknown as IUser).name // as we populated
+        }
+        const pdfBuffer = await generatePdf(invoiceData)
+
+        // uploading in cloudinary 
+        // using any for now 
+        const cloudinaryResult  = await uploadBufferToCloudinary(pdfBuffer, "invoice")
+        // console.log({cloudinaryResult})
+
+        if(!cloudinaryResult){
+            throw new AppError(401, "Error Uploading Pdf")
+        }
+
+        // update our booking 
+
+        await Payment.findByIdAndUpdate(updatedPayment._id, {invoiceUrl : cloudinaryResult.secure_url}, {runValidators:true, session})
+
+          await sendEmail({
+            to: (updatedBooking.user as unknown as IUser).email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    filename: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        })
+
+
+
+        await session.commitTransaction(); //transaction
+        session.endSession()
+        return { success: true, message: "Payment Completed Successfully" }
+    } catch (error) {
+        await session.abortTransaction(); // rollback
+        session.endSession()
+        // throw new AppError(httpStatus.BAD_REQUEST, error) ❌❌
+        throw error
+    }
+};
+
+const getInvoiceDownloadUrl = async (paymentId: string) => {
+    const payment = await Payment.findById(paymentId)
+        .select("invoiceUrl")
+
+    if (!payment) {
+        throw new AppError(401, "Payment not found")
+    }
+
+    if (!payment.invoiceUrl) {
+        throw new AppError(401, "No invoice found")
+    }
+
+    return payment.invoiceUrl
+};
+
+
+export const PaymentService = {
+    initPayment,
+    successPayment,
+    failPayment,
+    cancelPayment,
+    getInvoiceDownloadUrl
+};
+```
+## 33-7 Refactoring User APIs, Configuring CORS for Frontend
+
+- update user.route.ts 
+
+```ts 
+
+import { Router } from "express";
+import { validateRequest } from "../../middlewares/validateRequest";
+import { userControllers } from "./user.controller";
+
+import { createUserZodSchema, updateUserZodSchema } from "./user.validation";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "./user.interface";
+
+
+
+const router = Router()
+
+
+
+router.get("/all-users", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getAllUsers)
+
+router.get("/me", checkAuth(...Object.values(Role)), userControllers.getMe)
+
+router.post("/register",
+    validateRequest(createUserZodSchema),
+    userControllers.createUser)
+
+router.patch("/:id", validateRequest(updateUserZodSchema), checkAuth(...Object.values(Role)), userControllers.updateUser)
+router.get("/:id",checkAuth(Role.ADMIN, Role.SUPER_ADMIN), userControllers.getSingleUser)
+
+export const UserRoutes = router
+```
+- updated user.validation.ts 
+
+```ts 
+import z from "zod";
+import { IsActive, Role } from "./user.interface";
+
+export const createUserZodSchema = z.object({
+    name: z
+        .string({ invalid_type_error: "Name must be string" })
+        .min(2, { message: "Name must be at least 2 characters long." })
+        .max(50, { message: "Name cannot exceed 50 characters." }),
+    email: z
+        .string({ invalid_type_error: "Email must be string" })
+        .email({ message: "Invalid email address format." })
+        .min(5, { message: "Email must be at least 5 characters long." })
+        .max(100, { message: "Email cannot exceed 100 characters." }),
+    password: z
+        .string({ invalid_type_error: "Password must be string" })
+        .min(8, { message: "Password must be at least 8 characters long." })
+        .regex(/^(?=.*[A-Z])/, {
+            message: "Password must contain at least 1 uppercase letter.",
+        })
+        .regex(/^(?=.*[!@#$%^&*])/, {
+            message: "Password must contain at least 1 special character.",
+        })
+        .regex(/^(?=.*\d)/, {
+            message: "Password must contain at least 1 number.",
+        }),
+    phone: z
+        .string({ invalid_type_error: "Phone Number must be string" })
+        .regex(/^(?:\+8801\d{9}|01\d{9})$/, {
+            message: "Phone number must be valid for Bangladesh. Format: +8801XXXXXXXXX or 01XXXXXXXXX",
+        })
+        .optional(),
+    address: z
+        .string({ invalid_type_error: "Address must be string" })
+        .max(200, { message: "Address cannot exceed 200 characters." })
+        .optional()
+})
+
+export const updateUserZodSchema = z.object({
+    name: z
+        .string({ invalid_type_error: "Name must be string" })
+        .min(2, { message: "Name must be at least 2 characters long." })
+        .max(50, { message: "Name cannot exceed 50 characters." }).optional(),
+    // password: z
+    //     .string({ invalid_type_error: "Password must be string" })
+    //     .min(8, { message: "Password must be at least 8 characters long." })
+    //     .regex(/^(?=.*[A-Z])/, {
+    //         message: "Password must contain at least 1 uppercase letter.",
+    //     })
+    //     .regex(/^(?=.*[!@#$%^&*])/, {
+    //         message: "Password must contain at least 1 special character.",
+    //     })
+    //     .regex(/^(?=.*\d)/, {
+    //         message: "Password must contain at least 1 number.",
+    //     }).optional(),
+    phone: z
+        .string({ invalid_type_error: "Phone Number must be string" })
+        .regex(/^(?:\+8801\d{9}|01\d{9})$/, {
+            message: "Phone number must be valid for Bangladesh. Format: +8801XXXXXXXXX or 01XXXXXXXXX",
+        })
+        .optional(),
+    role: z
+        // .enum(["ADMIN", "GUIDE", "USER", "SUPER_ADMIN"])
+        .enum(Object.values(Role) as [string])
+        .optional(),
+    isActive: z
+        .enum(Object.values(IsActive) as [string])
+        .optional(),
+    isDeleted: z
+        .boolean({ invalid_type_error: "isDeleted must be true or false" })
+        .optional(),
+    isVerified: z
+        .boolean({ invalid_type_error: "isVerified must be true or false" })
+        .optional(),
+    address: z
+        .string({ invalid_type_error: "Address must be string" })
+        .max(200, { message: "Address cannot exceed 200 characters." })
+        .optional()
+})
+```
+
+- updated user.service.ts 
+
+```ts 
+import AppError from "../../errorHelpers/AppError";
+import { IAuthProvider, IUser, Role } from "./user.interface";
+import { User } from "./user.model";
+import httpStatus from 'http-status-codes';
+import bcryptjs from "bcryptjs";
+import { JwtPayload } from "jsonwebtoken";
+// import { envVars } from "../../config/env";
+import { QueryBuilder } from "../../utils/QueryBuilder";
+import { userSearchableFields } from "./user.constant";
+
+const createUser = async (payload: Partial<IUser>) => {
+
+    const { email, password, ...rest } = payload
+
+    const isUserExist = await User.findOne({ email })
+
+    if (isUserExist) {
+        throw new AppError(httpStatus.BAD_REQUEST, "User Already Exists")
+    }
+
+    const hashedPassword = await bcryptjs.hash(password as string, 10)
+    // const isPasswordMatch = await bcryptjs.compare("password as string", hashedPassword) //compares password 
+
+
+
+    // // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    // const authProvider: IAuthProvider = {provider : "credentials", providerId : email!}
+
+
+    const authProvider: IAuthProvider = { provider: "credentials", providerId: email as string }
+
+    const user = await User.create({
+        email,
+        password: hashedPassword,
+        auths: [authProvider],
+        ...rest
+    })
+
+    return user
+}
+
+const getAllUsers = async (query: Record<string, string>) => {
+
+    const queryBuilder = new QueryBuilder(User.find(), query)
+    const usersData = queryBuilder
+        .filter()
+        .search(userSearchableFields)
+        .sort()
+        .fields()
+        .paginate();
+
+    const [data, meta] = await Promise.all([
+        usersData.build(),
+        queryBuilder.getMeta()
+    ])
+
+    return {
+        data,
+        meta
+    }
+};
+// update User 
+
+const updateUser = async (userId: string, payload: Partial<IUser>, decodedToken: JwtPayload) => {
+
+    const ifUserExist = await User.findById(userId);
+
+    // new
+    if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+        if (userId !== decodedToken.userId) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are unauthorized to update another user's profile");
+        }
+    }
+
+    if (!ifUserExist) {
+        throw new AppError(httpStatus.NOT_FOUND, "User Not Found")
+    }
+
+    // new
+    if (decodedToken.role === Role.ADMIN && ifUserExist.role === Role.SUPER_ADMIN) {
+        throw new AppError(httpStatus.FORBIDDEN, "You are not authorized to update a super admin profile");
+    }
+
+    /**
+     * email - can not update
+     * name, phone, password address
+     * password - re hashing
+     *  only admin superadmin - role, isDeleted...
+     * 
+     * promoting to superadmin - superadmin
+     */
+
+    if (payload.role) {
+        if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+
+        // if (payload.role === Role.SUPER_ADMIN && decodedToken.role === Role.ADMIN) {
+        //     throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        // }
+    }
+
+    if (payload.isActive || payload.isDeleted || payload.isVerified) {
+        if (decodedToken.role === Role.USER || decodedToken.role === Role.GUIDE) {
+            throw new AppError(httpStatus.FORBIDDEN, "You are not authorized");
+        }
+    }
+
+    // new update 
+
+    // if (payload.password) {
+    //     payload.password = await bcryptjs.hash(payload.password, envVars.bcryptjs_SALT_ROUND)
+    // }
+
+    const newUpdatedUser = await User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true })
+
+    return newUpdatedUser
+}
+
+const getSingleUser = async (id: string) => {
+    const user = await User.findById(id).select("-password");
+    return {
+        data: user
+    }
+};
+const getMe = async (userId: string) => {
+    const user = await User.findById(userId).select("-password");
+    return {
+        data: user
+    }
+};
+
+export const userServices = {
+    createUser,
+    getAllUsers,
+    updateUser,
+    getSingleUser,
+    getMe
+}
+```
+
+- updated for cors app.ts 
+
+```ts 
+
+import express, { Request, Response } from "express"
+
+import cors from "cors"
+
+import { router } from "./app/routes"
+import { globalErrorHandler } from "./app/middlewares/globalErrorHandler"
+import notFound from "./app/middlewares/notFound"
+import cookieParser from "cookie-parser"
+import passport from "passport"
+import expressSession from "express-session"
+
+import "./app/config/passport" //we have to let the app.ts know that passport.ts file exists 
+import { envVars } from "./app/config/env"
+
+const app = express()
+
+app.use(expressSession({
+    secret: envVars.EXPRESS_SESSION_SECRET,
+    resave: false, // Don’t save the session again if nothing changed.
+    saveUninitialized: false // Don’t create empty sessions for users who haven’t logged in yet.
+}))
+app.use(passport.initialize()) // This sets up Passport in your Express app.
+app.use(passport.session()) // This tells Passport to use sessions to store login info (so the user stays logged in between requests).
+
+app.use(cookieParser()) // cookie parser added
+app.use(express.json())
+app.use(express.urlencoded({ extended: true })) // for multer upload
+app.use(cors({
+    origin : envVars.FRONTEND_URL,
+    credentials : true //have to use this for setting the token in cookies 
+}))
+
+app.get("/", (req: Request, res: Response) => {
+    res.status(200).json({
+        message: "Welcome To Tour Management System"
+    })
+})
+
+app.use("/api/v1", router)
+
+// using the global error handler 
+app.use(globalErrorHandler)
+
+// Using not found route 
+app.use(notFound)
+
+
+
+export default app
+```
+
+## 33-8 Creating Dashboard Analytics API, User Stats
+- from now we will work on mongoose aggregation 
+- lets see all in next module 
+
+
+## 33-9 Creating Dashboard Analytics API, Tour Stats and 33-10 Complete Tour Stats API
+
+- stat.route.ts
+
+```ts
+import express from "express";
+import { checkAuth } from "../../middlewares/checkAuth";
+import { Role } from "../user/user.interface";
+import { StatsController } from "./stats.controller";
+
+const router = express.Router();
+
+router.get(
+    "/booking",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    StatsController.getBookingStats
+);
+router.get(
+    "/payment",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    StatsController.getPaymentStats
+);
+router.get(
+    "/user",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    StatsController.getUserStats
+);
+router.get(
+    "/tour",
+    checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
+    StatsController.getTourStats
+);
+
+export const StatsRoutes = router;
+```
+
+- stat.controller.ts 
+
+```ts 
+// controllers/stats.controller.ts
+import { Request, Response } from "express";
+import { catchAsync } from "../../utils/catchAsync";
+import { sendResponse } from "../../utils/sendResponse";
+import { StatsService } from "./stats.service";
+
+const getBookingStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getBookingStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Booking stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getPaymentStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getPaymentStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Payment stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getUserStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getUserStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "User stats fetched successfully",
+        data: stats,
+    });
+});
+
+const getTourStats = catchAsync(async (req: Request, res: Response) => {
+    const stats = await StatsService.getTourStats();
+    sendResponse(res, {
+        statusCode: 200,
+        success: true,
+        message: "Tour stats fetched successfully",
+        data: stats,
+    });
+});
+
+export const StatsController = {
+    getBookingStats,
+    getPaymentStats,
+    getUserStats,
+    getTourStats,
+};
+```
+
+- stat.service.ts 
+
+```ts
+import { Booking } from "../booking/booking.model";
+import { Tour } from "../tour/tour.model";
+import { IsActive } from "../user/user.interface";
+import { User } from "../user/user.model";
+
+
+
+const now = new Date();
+const sevenDaysAgo = new Date(now).setDate(now.getDate() - 7);
+const thirtyDaysAgo = new Date(now).setDate(now.getDate() - 30);
+
+const getUserStats = async () => {
+    const totalUsersPromise = User.countDocuments()
+
+    const totalActiveUsersPromise = User.countDocuments({ isActive: IsActive.ACTIVE })
+    const totalInActiveUsersPromise = User.countDocuments({ isActive: IsActive.INACTIVE })
+    const totalBlockedUsersPromise = User.countDocuments({ isActive: IsActive.BLOCKED })
+
+    const newUsersInLast7DaysPromise = User.countDocuments({
+        createdAt: { $gte: sevenDaysAgo }
+    })
+    const newUsersInLast30DaysPromise = User.countDocuments({
+        createdAt: { $gte: thirtyDaysAgo }
+    })
+
+    const usersByRolePromise = User.aggregate([
+        // stage-1  :  Grouping users by role and count total users in each role
+        {
+            $group: {
+                _id: "$role",
+                count: { $sum: 1 }
+            }
+        }
+    ])
+
+    const [totalUsers, totalActiveUsers, totalInActiveUsers, totalBlockedUsers, newUsersInLast7Days, newUsersInLast30Days, usersByRole] = await Promise.all([
+        totalUsersPromise,
+        totalActiveUsersPromise,
+        totalInActiveUsersPromise,
+        totalBlockedUsersPromise,
+        newUsersInLast7DaysPromise,
+        newUsersInLast30DaysPromise,
+        usersByRolePromise
+    ])
+    return {
+        totalUsers,
+        totalActiveUsers,
+        totalInActiveUsers,
+        totalBlockedUsers,
+        newUsersInLast7Days,
+        newUsersInLast30Days,
+        usersByRole
+    }
+
+}
+
+const getTourStats = async () => {
+
+
+    /**
+ * await Tour.updateMany(
+        {
+            // Only update where tourType or division is stored as a string
+            $or: [
+                { tourType: { $type: "string" } },
+                { division: { $type: "string" } }
+            ]
+        },
+        [
+            {
+                $set: {
+                    tourType: { $toObjectId: "$tourType" },
+                    division: { $toObjectId: "$division" }
+                }
+            }
+        ]
+    );
+ */
+    const totalTourPromise = Tour.countDocuments();
+
+    const totalTourByTourTypePromise = Tour.aggregate([
+        // stage-1 : connect Tour Type model - lookup stage
+        {
+            $lookup: {
+                from: "tourtypes",
+                localField: "tourType",
+                foreignField: "_id",
+                as: "type"
+            }
+        },
+        // this will give us array of types so we have to do unwind 
+        //stage - 2 : unwind the array to object
+
+        {
+            $unwind: "$type"
+        },
+
+        //stage - 3 : grouping tour type
+        {
+            $group: {
+                _id: "$type.name",
+                count: { $sum: 1 }
+            }
+        }
+    ])
+
+    const avgTourCostPromise = Tour.aggregate([
+        //Stage-1 : group the cost from, do sum, and average the sum
+        {
+            $group: {
+                _id: null,
+                avgCostFrom: { $avg: "$costFrom" }
+            }
+        }
+    ])
+
+    const totalTourByDivisionPromise = Tour.aggregate([
+        // stage-1 : connect Division model - lookup stage
+        {
+            $lookup: {
+                from: "divisions",
+                localField: "division",
+                foreignField: "_id",
+                as: "division"
+            }
+        },
+        //stage - 2 : unwind the array to object
+
+        {
+            $unwind: "$division"
+        },
+
+        //stage - 3 : grouping tour type
+        {
+            $group: {
+                _id: "$division.name",
+                count: { $sum: 1 }
+            }
+        }
+    ])
+
+    const totalHighestBookedTourPromise = Booking.aggregate([
+        // stage-1 : Group the tour
+        {
+            $group: {
+                _id: "$tour",
+                bookingCount: { $sum: 1 }
+            }
+        },
+
+        //stage-2 : sort the tour
+
+        {
+            $sort: { bookingCount: -1 }
+        },
+
+        //stage-3 : sort
+        {
+            $limit: 5
+        },
+
+        //stage-4 lookup stage
+        {
+            $lookup: {
+                from: "tours",
+                let: { tourId: "$_id" },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: { $eq: ["$_id", "$$tourId"] }
+                        }
+                    }
+                ],
+                as: "tour"
+            }
+        },
+        //stage-5 unwind stage
+        { $unwind: "$tour" },
+
+        //stage-6 Project stage
+
+        {
+            $project: {
+                bookingCount: 1,
+                "tour.title": 1,
+                "tour.slug": 1
+            }
+        }
+    ])
+
+    const [totalTour, totalTourByTourType, avgTourCost, totalTourByDivision, totalHighestBookedTour] = await Promise.all([
+        totalTourPromise,
+        totalTourByTourTypePromise,
+        avgTourCostPromise,
+        totalTourByDivisionPromise,
+        totalHighestBookedTourPromise
+    ])
+
+    return {
+        totalTour,
+        totalTourByTourType,
+        avgTourCost,
+        totalTourByDivision,
+        totalHighestBookedTour
+    }
+}
+
+
+const getBookingStats = async () => {
+
+    return {}
+}
+
+const getPaymentStats = async () => {
+
+
+    return {}
+}
+
+
+
+
+
+
+export const StatsService = {
+    getBookingStats,
+    getPaymentStats,
+    getTourStats,
+    getUserStats
+}
+```
+- added up to user and tour stats

@@ -77,4 +77,4 @@ const tour = this.getUpdate() as Partial <ITour>
 
 
 
-export const Tour = model<ITour>("Tour", tourSchema)  
+export const  Tour = model<ITour>("Tour", tourSchema)  

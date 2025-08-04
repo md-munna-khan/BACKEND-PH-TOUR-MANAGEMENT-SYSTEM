@@ -14,7 +14,7 @@ const app = express();
 
 
 app.use(expressSession({
-  secret:"your secret",
+  secret:envVars.EXPRESS_SESSION_SECRET,
   resave:false,
   saveUninitialized:false
 }))
@@ -40,3 +40,4 @@ app.get("/", (req: Request, res: Response) => {
 app.use(globalErrorHandler);
 app.use(notFound);
 export default app;
+

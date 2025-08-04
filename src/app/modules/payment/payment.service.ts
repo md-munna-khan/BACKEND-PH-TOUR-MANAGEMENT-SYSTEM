@@ -9,6 +9,11 @@ import { SSLService } from "../sslCommerz/sslCommerz.service";
 import { PAYMENT_STATUS } from "./payment.interface";
 import { Payment } from "./payment.model";
 import AppError from "../../errorHelpers/app.error";
+import { generatePdf, IInvoiceData } from "../../utils/invoice";
+import { ITour } from "../tour/tour.interface";
+import { IUser } from "../user/user.interface";
+import { sendEmail } from "../../utils/sendEmail";
+import { uploadBufferToCloudinary } from "../../config/cloudinary.config";
 
 const initPayment = async (bookingId: string) => {
 
@@ -50,18 +55,61 @@ const successPayment = async (query: Record<string, string>) => {
     session.startTransaction()
 
     try {
-
-
         const updatedPayment = await Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
             status: PAYMENT_STATUS.PAID,
         }, { new: true, runValidators: true, session: session })
+          if (!updatedPayment) {
+ throw new AppError(httpStatus.NOT_FOUND, "Not payment Found")
+    }
 
-        await Booking
+      const updatedBooking =   await Booking
             .findByIdAndUpdate(
                 updatedPayment?.booking,
                 { status: BOOKING_STATUS.COMPLETE },
-                { runValidators: true, session }
-            )
+                {new:true, runValidators: true, session }
+            ).populate("tour","title")
+            .populate("user","name email")
+
+  if (!updatedBooking) {
+ throw new AppError(httpStatus.NOT_FOUND, "Not Updated booking Found")
+    }
+
+const invoiceData :IInvoiceData={
+    bookingDate:updatedBooking?.createdAt as Date,
+    guestCount:updatedBooking.guestCount,
+    totalAmount:updatedPayment.amount,
+    tourTitle:(updatedBooking.tour as unknown as ITour).title,
+    transactionId:updatedPayment.transactionId,
+    userName:(updatedBooking.tour as unknown as IUser).name,
+
+}
+
+const pdfBuffer = await generatePdf(invoiceData)
+     // uploading in cloudinary 
+// using any for now 
+        const cloudinaryResult  = await uploadBufferToCloudinary(pdfBuffer, "invoice")
+        console.log({cloudinaryResult})
+
+        if(!cloudinaryResult){
+            throw new AppError(401, "Error Uploading Pdf")
+        }
+
+        await Payment.findByIdAndUpdate(updatedPayment._id,{invoiceUrl:cloudinaryResult.secure_url},{runValidators:true,session})
+
+  await sendEmail({
+            to: (updatedBooking.user as unknown as IUser).email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    fileName: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        })
+
 
         await session.commitTransaction(); //transaction
         session.endSession()
@@ -138,10 +186,25 @@ const cancelPayment = async (query: Record<string, string>) => {
     }
 };
 
+const getInvoiceDownloadUrl = async (paymentId: string) => {
+    const payment = await Payment.findById(paymentId)
+        .select("invoiceUrl")
+
+    if (!payment) {
+        throw new AppError(401, "Payment not found")
+    }
+
+    if (!payment.invoiceUrl) {
+        throw new AppError(401, "No invoice found")
+    }
+
+    return payment.invoiceUrl
+};
 
 export const PaymentService = {
     initPayment,
     successPayment,
     failPayment,
     cancelPayment,
+    getInvoiceDownloadUrl
 };

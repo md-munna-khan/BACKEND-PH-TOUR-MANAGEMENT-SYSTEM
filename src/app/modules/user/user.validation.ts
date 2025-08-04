@@ -42,15 +42,6 @@ export const updateUserZodSchema = z.object({
     .max(50, { message: "Name too long, maximum 50 characters" })
     .optional(),
 
-  password: z
-    .string({
-      required_error: "Password is required",
-    })
-    .regex(/^(?=.*[A-Z])(?=.*[!@#$%^&*])(?=.*\d).{8,}$/, {
-      message:
-        "Password must be at least 8 characters and include 1 uppercase letter, 1 special character, and 1 number",
-    })
-    .optional(),
 
   phone: z
     .string()
