@@ -13,10 +13,12 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SSLService = void 0;
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const axios_1 = __importDefault(require("axios"));
 const http_status_codes_1 = __importDefault(require("http-status-codes"));
 const env_1 = require("../../config/env");
 const app_error_1 = __importDefault(require("../../errorHelpers/app.error"));
+const payment_model_1 = require("../payment/payment.model");
 const sslPaymentInit = (payload) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const data = {
@@ -28,7 +30,7 @@ const sslPaymentInit = (payload) => __awaiter(void 0, void 0, void 0, function* 
             success_url: `${env_1.envVars.SSL.SSL_SUCCESS_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=success`,
             fail_url: `${env_1.envVars.SSL.SSL_FAIL_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=fail`,
             cancel_url: `${env_1.envVars.SSL.SSL_CANCEL_BACKEND_URL}?transactionId=${payload.transactionId}&amount=${payload.amount}&status=cancel`,
-            // ipn_url: "http://localhost:3030/ipn",
+            ipn_url: env_1.envVars.SSL.SSL_IPN_URL,
             shipping_method: "N/A",
             product_name: "Tour",
             product_category: "Service",
@@ -65,6 +67,24 @@ const sslPaymentInit = (payload) => __awaiter(void 0, void 0, void 0, function* 
         throw new app_error_1.default(http_status_codes_1.default.BAD_REQUEST, error.message);
     }
 });
+//_____________________Validate the payment function
+// this function will be called in a post method backend api. 
+// the flow will be like after successful payment the IPN url (post method made by us for our backend) will be automatically called and then inside the url validate payment function will be called 
+const validatePayment = (payload) => __awaiter(void 0, void 0, void 0, function* () {
+    try {
+        const response = yield (0, axios_1.default)({
+            method: "GET",
+            url: `${env_1.envVars.SSL.SSL_VALIDATION_API}?val_id=${payload.val_id}&store_id=${env_1.envVars.SSL.STORE_ID}&store_passwd=${env_1.envVars.SSL.STORE_PASS}`
+        });
+        console.log("sslcomeerz validate api response", response.data);
+        yield payment_model_1.Payment.updateOne({ transactionId: payload.tran_id }, { paymentGatewayData: response.data }, { runValidators: true });
+    }
+    catch (error) {
+        console.log(error);
+        throw new app_error_1.default(401, `Payment Validation Error, ${error.message}`);
+    }
+});
 exports.SSLService = {
-    sslPaymentInit
+    sslPaymentInit,
+    validatePayment
 };

@@ -21,6 +21,9 @@ const sslCommerz_service_1 = require("../sslCommerz/sslCommerz.service");
 const payment_interface_1 = require("./payment.interface");
 const payment_model_1 = require("./payment.model");
 const app_error_1 = __importDefault(require("../../errorHelpers/app.error"));
+const invoice_1 = require("../../utils/invoice");
+const sendEmail_1 = require("../../utils/sendEmail");
+const cloudinary_config_1 = require("../../config/cloudinary.config");
 const initPayment = (bookingId) => __awaiter(void 0, void 0, void 0, function* () {
     const payment = yield payment_model_1.Payment.findOne({ booking: bookingId });
     if (!payment) {
@@ -53,8 +56,45 @@ const successPayment = (query) => __awaiter(void 0, void 0, void 0, function* ()
         const updatedPayment = yield payment_model_1.Payment.findOneAndUpdate({ transactionId: query.transactionId }, {
             status: payment_interface_1.PAYMENT_STATUS.PAID,
         }, { new: true, runValidators: true, session: session });
-        yield booking_model_1.Booking
-            .findByIdAndUpdate(updatedPayment === null || updatedPayment === void 0 ? void 0 : updatedPayment.booking, { status: booking_interface_1.BOOKING_STATUS.COMPLETE }, { runValidators: true, session });
+        if (!updatedPayment) {
+            throw new app_error_1.default(http_status_codes_1.default.NOT_FOUND, "Not payment Found");
+        }
+        const updatedBooking = yield booking_model_1.Booking
+            .findByIdAndUpdate(updatedPayment === null || updatedPayment === void 0 ? void 0 : updatedPayment.booking, { status: booking_interface_1.BOOKING_STATUS.COMPLETE }, { new: true, runValidators: true, session }).populate("tour", "title")
+            .populate("user", "name email");
+        if (!updatedBooking) {
+            throw new app_error_1.default(http_status_codes_1.default.NOT_FOUND, "Not Updated booking Found");
+        }
+        const invoiceData = {
+            bookingDate: updatedBooking === null || updatedBooking === void 0 ? void 0 : updatedBooking.createdAt,
+            guestCount: updatedBooking.guestCount,
+            totalAmount: updatedPayment.amount,
+            tourTitle: updatedBooking.tour.title,
+            transactionId: updatedPayment.transactionId,
+            userName: updatedBooking.tour.name,
+        };
+        const pdfBuffer = yield (0, invoice_1.generatePdf)(invoiceData);
+        // uploading in cloudinary 
+        // using any for now 
+        const cloudinaryResult = yield (0, cloudinary_config_1.uploadBufferToCloudinary)(pdfBuffer, "invoice");
+        console.log({ cloudinaryResult });
+        if (!cloudinaryResult) {
+            throw new app_error_1.default(401, "Error Uploading Pdf");
+        }
+        yield payment_model_1.Payment.findByIdAndUpdate(updatedPayment._id, { invoiceUrl: cloudinaryResult.secure_url }, { runValidators: true, session });
+        yield (0, sendEmail_1.sendEmail)({
+            to: updatedBooking.user.email,
+            subject: "Your Booking Invoice",
+            templateName: "invoice",
+            templateData: invoiceData,
+            attachments: [
+                {
+                    fileName: "invoice.pdf",
+                    content: pdfBuffer,
+                    contentType: "application/pdf"
+                }
+            ]
+        });
         yield session.commitTransaction(); //transaction
         session.endSession();
         return { success: true, message: "Payment Completed Successfully" };
@@ -110,9 +150,21 @@ const cancelPayment = (query) => __awaiter(void 0, void 0, void 0, function* () 
         throw error;
     }
 });
+const getInvoiceDownloadUrl = (paymentId) => __awaiter(void 0, void 0, void 0, function* () {
+    const payment = yield payment_model_1.Payment.findById(paymentId)
+        .select("invoiceUrl");
+    if (!payment) {
+        throw new app_error_1.default(401, "Payment not found");
+    }
+    if (!payment.invoiceUrl) {
+        throw new app_error_1.default(401, "No invoice found");
+    }
+    return payment.invoiceUrl;
+});
 exports.PaymentService = {
     initPayment,
     successPayment,
     failPayment,
     cancelPayment,
+    getInvoiceDownloadUrl
 };

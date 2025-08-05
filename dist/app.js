@@ -15,7 +15,7 @@ const globalErrorHandler_1 = require("./app/middleware/globalErrorHandler");
 const env_1 = require("./app/config/env");
 const app = (0, express_1.default)();
 app.use((0, express_session_1.default)({
-    secret: "your secret",
+    secret: env_1.envVars.EXPRESS_SESSION_SECRET,
     resave: false,
     saveUninitialized: false
 }));

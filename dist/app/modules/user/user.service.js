@@ -42,6 +42,11 @@ const createUserServices = (payload) => __awaiter(void 0, void 0, void 0, functi
     return user;
 });
 const updateUser = (userId, payload, decodedToken) => __awaiter(void 0, void 0, void 0, function* () {
+    if (decodedToken.role === user_interface_1.Role.USER || decodedToken.role === user_interface_1.Role.GUIDE) {
+        if (userId !== decodedToken.userId) {
+            throw new app_error_1.default(401, "You are not authorized");
+        }
+    }
     const ifUserExist = yield user_model_1.User.findById(userId);
     if (!ifUserExist) {
         throw new app_error_1.default(http_status_codes_1.default.NOT_FOUND, "You are not authorized");
@@ -49,21 +54,21 @@ const updateUser = (userId, payload, decodedToken) => __awaiter(void 0, void 0, 
     // if(ifUserExist.isDeleted || ifUserExist.isActive ===IsActive.BLOCKED){
     //    throw new AppError(httpStatus.FORBIDDEN ,"This User Can not be Updated");
     // }
+    if (decodedToken.role === user_interface_1.Role.ADMIN && ifUserExist.role === user_interface_1.Role.SUPER_ADMIN) {
+        throw new app_error_1.default(http_status_codes_1.default.NOT_FOUND, "You are not authorized");
+    }
     if (payload.role) {
         if (decodedToken.role === user_interface_1.Role.USER || decodedToken.role === user_interface_1.Role.GUIDE) {
             throw new app_error_1.default(http_status_codes_1.default.FORBIDDEN, "You are not authorized");
         }
-        if (payload.role === user_interface_1.Role.SUPER_ADMIN && decodedToken.role === user_interface_1.Role.ADMIN) {
-            throw new app_error_1.default(http_status_codes_1.default.FORBIDDEN, "You are not authorized");
-        }
+        //   if(payload.role === Role.SUPER_ADMIN && decodedToken.role ===Role.ADMIN){
+        // throw new AppError(httpStatus.FORBIDDEN ,"You are not authorized");
+        //   }
     }
     if (payload.isActive || payload.isDeleted || payload.isVerified) {
         if (decodedToken.role === user_interface_1.Role.USER || decodedToken.role === user_interface_1.Role.GUIDE) {
             throw new app_error_1.default(http_status_codes_1.default.FORBIDDEN, "You are not authorized");
         }
-    }
-    if (payload.password) {
-        payload.password = yield bcryptjs_1.default.hash(payload.password, env_1.envVars.BCRYPT_SALT_ROUND);
     }
     const newUpdatedUser = yield user_model_1.User.findByIdAndUpdate(userId, payload, { new: true, runValidators: true });
     return newUpdatedUser;
@@ -84,9 +89,16 @@ const getMe = (userId) => __awaiter(void 0, void 0, void 0, function* () {
         data: user,
     };
 });
+const getSingleUser = (id) => __awaiter(void 0, void 0, void 0, function* () {
+    const user = yield user_model_1.User.findById(id).select("-password");
+    return {
+        data: user
+    };
+});
 exports.UserServices = {
     createUserServices,
     getMe,
     getAllUsers,
-    updateUser
+    updateUser,
+    getSingleUser
 };
