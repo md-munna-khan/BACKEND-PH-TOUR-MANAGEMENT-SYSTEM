@@ -40,14 +40,6 @@ exports.updateUserZodSchema = zod_1.default.object({
         .min(2, { message: "Name too short, minimum 2 characters" })
         .max(50, { message: "Name too long, maximum 50 characters" })
         .optional(),
-    password: zod_1.default
-        .string({
-        required_error: "Password is required",
-    })
-        .regex(/^(?=.*[A-Z])(?=.*[!@#$%^&*])(?=.*\d).{8,}$/, {
-        message: "Password must be at least 8 characters and include 1 uppercase letter, 1 special character, and 1 number",
-    })
-        .optional(),
     phone: zod_1.default
         .string()
         .regex(/^(?:\+88|88)?01[3-9]\d{8}$/, {
