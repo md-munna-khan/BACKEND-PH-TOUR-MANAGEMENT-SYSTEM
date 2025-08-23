@@ -26,7 +26,7 @@ const moduleRoutes=[
         route:DivisionRoutes
     },
      {
-        path: "/tours",
+        path: "/tour",
         route: TourRoutes
     },
      {
