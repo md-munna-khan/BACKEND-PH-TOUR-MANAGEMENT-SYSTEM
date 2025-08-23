@@ -59,7 +59,7 @@ const getAllUsers = catchAsync(
     sendResponse(res, {
       success: true,
       statusCode: httpStatus.CREATED,
-      message: "Your Profile Retrieved Successfully",
+      message: "All users Retrieved Successfully",
       data: result.data,
       // meta: result.meta,
     });
@@ -76,7 +76,7 @@ const getMe = catchAsync(
     sendResponse(res, {
       success: true,
       statusCode: httpStatus.CREATED,
-      message: "All users Retrieved Successfully",
+      message: " Your Profile Retrieved Successfully",
       data: result.data,
 
     });
